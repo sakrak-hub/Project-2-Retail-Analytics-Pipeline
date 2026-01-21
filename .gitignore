@@ -1,0 +1,7 @@
+airflow/
+dbt/
+env-retailitics/
+retail_data/
+terraform/.terraform./
+terraform/*terraform*
+requirements.txt
