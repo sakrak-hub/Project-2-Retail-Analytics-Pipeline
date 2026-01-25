@@ -1,5 +1,5 @@
 airflow/
-dbt/
+retailitics_dbt/
 env-retailitics/
 retail_data/
 terraform/.terraform./
