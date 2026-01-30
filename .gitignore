@@ -5,3 +5,4 @@ retail_data/
 terraform/.terraform./
 terraform/*terraform*
 requirements.txt
+terraform-demo/
