@@ -1,4 +1,4 @@
-airflow/
+airflow/.env
 retailitics_dbt/
 env-retailitics/
 retail_data/
@@ -6,3 +6,4 @@ terraform/.terraform./
 terraform/*terraform*
 requirements.txt
 terraform-demo/
+.env
