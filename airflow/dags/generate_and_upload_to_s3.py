@@ -48,7 +48,7 @@ with DAG(
     schedule='@daily',
     start_date=datetime(2026, 1,1),
     max_active_runs=1,
-    catchup=True
+    catchup=True,
     tags=['retail', 'transactions'],
 ) as dag:
 
