@@ -1,0 +1,7 @@
+{"timestamp":"2026-02-04T09:44:46.030115Z","level":"info","event":"DAG bundles loaded: dags-folder","logger":"airflow.dag_processing.bundles.manager.DagBundlesManager","filename":"manager.py","lineno":179}
+{"timestamp":"2026-02-04T09:44:46.031364Z","level":"info","event":"Filling up the DagBag from /opt/airflow/dags/generate_and_upload_to_s3.py","logger":"airflow.models.dagbag.DagBag","filename":"dagbag.py","lineno":593}
+{"timestamp":"2026-02-04T09:44:46.190041Z","level":"info","event":"2026-02-04","logger":"task.stdout"}
+{"timestamp":"2026-02-04T09:44:46.190581Z","level":"info","event":"Checking for retail_data/transactions/transactions_{{ds}}.parquet in S3...","logger":"task.stdout"}
+{"timestamp":"2026-02-04T09:44:46.200620Z","level":"info","event":"AWS Connection (conn_id='aws_retailitics_s3', conn_type='aws') credentials retrieved from login and password.","logger":"airflow.providers.amazon.aws.utils.connection_wrapper.AwsConnectionWrapper","filename":"connection_wrapper.py","lineno":331}
+{"timestamp":"2026-02-04T09:44:49.375574Z","level":"info","event":"Data not found. Generating data","logger":"task.stdout"}
+{"timestamp":"2026-02-04T09:44:49.375542Z","level":"info","event":"Done. Returned value was: None","logger":"airflow.task.operators.airflow.providers.standard.operators.python.PythonOperator","filename":"python.py","lineno":216}
