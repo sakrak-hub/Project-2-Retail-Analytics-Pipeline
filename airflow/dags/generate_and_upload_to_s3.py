@@ -52,7 +52,7 @@ with DAG(
     tags=['retail', 'transactions'],
 ) as dag:
 
-    file_checker = PythonOperator(
+    verify_file_in_s3 = PythonOperator(
         task_id = 'verify_file_in_s3',
         python_callable = check_file_exists
     )
@@ -64,13 +64,13 @@ with DAG(
     )
 
     upload_master_data = PythonOperator(
-        task_id = 'master_data_s3',
+        task_id = 'upload_master_data',
         python_callable = upload_master_data_to_s3,
         op_kwargs={'files_list': master_data_list}
     )
 
     upload_transactions_to_s3 = LocalFilesystemToS3Operator(
-        task_id = 'upload_transactions',
+        task_id = 'upload_transactions_to_s3',
         trigger_rule="none_skipped",
         filename = '/tmp/retail_data/transactions/transactions_{{ds}}.parquet',
         dest_key = 's3://my-retail-2026-analytics-5805/retail_data/transactions/transactions_{{ds}}.parquet',
@@ -78,4 +78,4 @@ with DAG(
         replace = False,
     )
 
-    file_checker >> generate_retail_data >> [upload_master_data, upload_transactions_to_s3] 
+    verify_file_in_s3 >> generate_retail_data >> [upload_master_data, upload_transactions_to_s3] 
