@@ -1,5 +1,9 @@
 airflow/.env
-retailitics_dbt/
+airflow/config/airflow.cfg
+airflow/logs/
+airflow/config/
+airflow/docker-compose.yaml
+airflow/Dockerfile
 env-retailitics/
 retail_data/
 terraform/.terraform./
@@ -7,3 +11,8 @@ terraform/*terraform*
 requirements.txt
 terraform-demo/
 .env
+retailitics_dbt/*.yml
+retailitics_dbt/*.txt
+retailitics_dbt/*.duckdb
+retailitics_dbt/target/
+retailitics_dbt/logs/

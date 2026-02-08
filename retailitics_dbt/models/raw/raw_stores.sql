@@ -1,0 +1,19 @@
+{{
+    config(
+        materialized='view'
+    )
+}}
+
+select 
+store_id,     
+store_name,   
+address,      
+city,         
+state,        
+zip_code,     
+phone,        
+manager,      
+store_type,   
+opening_date
+from
+read_parquet('s3://my-retail-2026-analytics-5805/retail_data/stores.parquet')

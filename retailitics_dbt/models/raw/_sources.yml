@@ -1,0 +1,400 @@
+version: 2
+
+sources:
+  - name: retail_transactions_data
+    description: Raw retail transaction data from S3
+    database: warehouse
+    schema: retail_transactions_data
+
+    freshness:
+      warn_after: {count: 24, period: hour}
+      error_after: {count: 48, period: hour}
+    
+    loaded_at_field: _loaded_at
+
+    tables:
+      - name: transactions
+        identifier: raw_transactions
+        description: Raw transaction records
+
+        tests:
+          - dbt_utils.unique_combination_of_columns:
+              combination_of_columns:
+                - transaction_id
+                - product_id
+
+        columns:
+          - name: transaction_id
+            tests:
+              - not_null:
+                  severity: error 
+          - name: date
+            tests:
+              - not_null:
+                  severity: warn
+              - dbt_utils.expression_is_true:
+                  expression: ">= '2020-01-01'"
+                  name: date_not_too_old
+                  severity: warn                  
+          - name: time
+            tests:
+              - not_null:
+                  severity: warn                 
+          - name: datetime
+            tests:
+              - not_null:
+                  severity: warn            
+          - name: customer_id
+            tests:
+              - not_null:
+                  severity: warn
+              - relationships:
+                  to: source('retail_transactions_data', 'raw_customers')
+                  field: customer_id
+                  severity: warn            
+          - name: store_id
+            tests:
+              - not_null:
+                  severity: warn
+              - relationships:
+                  to: source('retail_transactions_data', 'stores')
+                  field: store_id
+                  severity: warn              
+          - name: store_name
+            tests:
+              - not_null:
+                  severity: warn            
+          - name: cashier_id           
+          - name: payment_method
+            tests:
+              - not_null:
+                  severity: warn  
+              - accepted_values:
+                  values: ['Cash', 'Credit Card', 'Debit Card', 'Digital Wallet', 'Gift Card']
+                  severity: warn      
+          - name: subtotal
+            tests:
+              - not_null:
+                  severity: warn
+              - dbt_utils.accepted_range:
+                  min_value: -1000000
+                  max_value: 1000000
+                  severity: warn           
+          - name: tax_amount
+            tests:
+              - not_null:
+                  severity: warn  
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  inclusive: true
+                  severity: warn          
+          - name: total_amount
+            tests:
+              - not_null:
+                  severity: warn 
+              - dbt_utils.accepted_range:
+                  min_value: -1000000
+                  max_value: 1000000
+                  severity: warn       
+          - name: items_count
+            tests:
+              - not_null:
+                  severity: warn
+              - dbt_utils.accepted_range:
+                  min_value: 1
+                  max_value: 1000
+                  severity: warn           
+          - name: loyalty_points_earned
+            tests:
+              - not_null:
+                  severity: warn 
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  severity: warn
+          - name: promotion_code 
+          - name: refund_reason    
+          - name: status
+            tests:
+              - not_null:
+                  severity: warn  
+              - accepted_values:
+                    values: ['Failed','Completed','Refunded']
+                    severity: warn                
+          - name: product_id
+            tests:
+              - not_null:
+                  severity: error
+              - relationships:
+                  to: source('retail_transactions_data', 'raw_products')
+                  field: product_id
+                  severity: warn           
+          - name: product_name
+            tests:
+              - not_null:
+                  severity: warn          
+          - name: category
+            tests:
+              - not_null:
+                  severity: warn              
+          - name: quantity
+            tests:
+              - not_null:
+                  severity: warn
+              - dbt_utils.accepted_range:
+                  min_value: -1000 
+                  max_value: 1000
+                  severity: warn             
+          - name: unit_price
+            tests:
+              - not_null:
+                  severity: warn
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  max_value: 100000
+                  severity: warn           
+          - name: discount_percent
+            tests:
+              - not_null:
+                  severity: warn 
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  max_value: 100
+                  inclusive: true
+                  severity: warn     
+          - name: line_total
+            tests:
+              - not_null:
+                  severity: warn
+              - dbt_utils.accepted_range:
+                  min_value: -100000
+                  max_value: 100000
+                  severity: warn
+
+      - name: customers
+        identifier: raw_customers
+        description: Raw customer records
+        columns:
+          - name: customer_id
+            tests:
+              - unique:
+                  severity: error
+              - not_null:
+                  severity: error     
+          - name: first_name
+            tests:
+              - not_null:
+                  severity: warn           
+          - name: last_name
+            tests:
+              - not_null:
+                  severity: warn            
+          - name: email
+            tests:
+              - unique:
+                  severity: error
+              - not_null:
+                  severity: warn
+              - dbt_utils.not_empty_string       
+          - name: phone
+            tests:
+              - not_null:
+                  severity: warn                
+          - name: address
+            tests:
+              - not_null:
+                  severity: warn              
+          - name: city
+            tests:
+              - not_null:
+                  severity: warn                 
+          - name: state
+            tests:
+              - not_null:
+                  severity: warn                
+          - name: zip_code
+            tests:
+              - not_null:
+                  severity: warn             
+          - name: date_of_birth
+            tests:
+              - not_null:
+                  severity: warn 
+              - dbt_utils.expression_is_true:
+                  expression: "<= CURRENT_DATE - INTERVAL '18 years'"
+                  name: customer_must_be_18_or_older
+                  severity: warn       
+          - name: gender
+            tests:
+              - not_null:
+                  severity: warn 
+              - accepted_values:
+                  values: ['Male','Female','Other']
+                  severity: warn                
+          - name: registration_date
+            tests:
+              - not_null:
+                  severity: warn
+              - dbt_utils.expression_is_true:
+                  expression: "<= CURRENT_DATE"
+                  name: registration_not_in_future    
+          - name: loyalty_member
+            tests:
+              - not_null:
+                  severity: warn
+              - accepted_values:
+                  values: [true, false, 'true', 'false', 'TRUE', 'FALSE', 1, 0]
+                  severity: warn       
+          - name: preferred_contact
+            tests:
+              - not_null:
+                  severity: warn    
+              - accepted_values:
+                  values: ['Phone', 'SMS', 'Email']
+                  severity: warn  
+          - name: customer_segment
+            tests:
+              - not_null:
+                  severity: warn   
+              - accepted_values:
+                  values: ['Budget', 'Premium', 'Regular', 'VIP']
+                  severity: warn    
+          - name: total_lifetime_value
+            tests:
+              - not_null:
+                  severity: warn
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  severity: warn
+
+      - name: products
+        identifier: raw_products
+        description: Raw products records
+        columns:
+          - name: product_id
+            tests:
+              - unique:
+                  severity: error
+              - not_null:
+                  severity: error   
+          - name: product_name
+            tests:
+              - not_null:
+                  severity: error    
+          - name: category
+            tests:
+              - not_null:
+                  severity: warn        
+          - name: subcategory
+            tests:
+              - not_null:
+                  severity: warn     
+          - name: brand
+            tests:
+              - not_null:
+                  severity: warn           
+          - name: price
+            tests:
+              - not_null:
+                  severity: warn 
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  severity: warn          
+          - name: cost
+            tests:
+              - not_null:
+                  severity: warn
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  severity: warn            
+          - name: sku
+            tests:
+              - unique:
+                  severity: error
+              - not_null:
+                  severity: error           
+          - name: description
+            tests:
+              - not_null:
+                  severity: warn     
+          - name: weight
+            tests:
+              - not_null:
+                  severity: warn
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  severity: warn          
+          - name: dimensions
+            tests:
+              - not_null:
+                  severity: warn      
+          - name: stock_quantity
+            tests:
+              - not_null:
+                  severity: warn 
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  severity: warn 
+          - name: supplier
+            tests:
+              - not_null:
+                  severity: warn        
+          - name: launch_date
+            tests:
+              - not_null:
+                  severity: warn  
+
+      - name: stores
+        identifier: raw_stores
+        description: Raw stores records
+        columns:
+          - name: store_id
+            tests:
+              - unique:
+                  severity: error
+              - not_null:
+                  severity: error   
+          - name: store_name
+            tests:
+              - unique
+              - not_null:
+                  severity: warn     
+          - name: address
+            tests:
+              - unique
+              - not_null:
+                  severity: warn        
+          - name: city
+            tests:
+              - not_null:
+                  severity: warn           
+          - name: state
+            tests:
+              - not_null:
+                  severity: warn          
+          - name: zip_code
+            tests:
+              - not_null:
+                  severity: warn       
+          - name: phone
+            tests:
+              - unique
+              - not_null:
+                  severity: warn          
+          - name: manager
+            tests:
+              - not_null:
+                  severity: warn        
+          - name: store_type
+            tests:
+              - not_null:
+                  severity: warn
+              - accepted_values:
+                  values: ['Online', 'Flagship', 'Mall', 'Express', 'Outlet']
+                  severity: warn     
+          - name: opening_date
+            tests:
+              - not_null:
+                  severity: warn   
+              - dbt_utils.expression_is_true:
+                  expression: "<= CURRENT_DATE"
+                  name: opening_date_not_in_future

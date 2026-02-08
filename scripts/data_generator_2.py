@@ -171,7 +171,7 @@ class RetailDataGenerator:
         
         return modified_datetime
     
-    def _load_or_generate_master_data(self, output_dir='/tmp/retail_data'):
+    def _load_or_generate_master_data(self, output_dir='/opt/airflow/master_data'):
         """Load existing master data or generate new if it doesn't exist."""
         stores_file = f'{output_dir}/stores.parquet'
         products_file = f'{output_dir}/products.parquet'
@@ -770,7 +770,7 @@ class RetailDataGenerator:
         codes = ['SAVE10', 'SUMMER20', 'NEWCUST15', 'LOYALTY5', 'WEEKEND25', 'FLASH30']
         return random.choice(codes)
     
-    def save_master_data(self, output_dir='/tmp/retail_data'):
+    def save_master_data(self, output_dir='/opt/airflow/master_data'):
         """Save master data (stores, products, customers) to Parquet files."""
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -808,7 +808,7 @@ class RetailDataGenerator:
         print(f"Generated {len(self.stores)} stores, {len(self.products)} products, {len(self.customers)} customers")
         print(f"Data quality issues: {len(self.duplicate_customers)} duplicate customers, {len(self.duplicate_products)} duplicate products")
     
-    def force_regenerate_master_data(self, output_dir='/tmp/retail_data'):
+    def force_regenerate_master_data(self, output_dir='/opt/airflow/master_data'):
         """Force regeneration of master data (useful for testing or updates)."""
         print("Force regenerating master data...")
         self.stores = []

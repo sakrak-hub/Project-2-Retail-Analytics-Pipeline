@@ -1,0 +1,23 @@
+{{
+    config(
+        materialized='view'
+    )
+}}
+
+select 
+product_id,     
+product_name,   
+category,       
+subcategory,    
+brand,          
+price,          
+cost,           
+sku,            
+description,    
+weight,         
+dimensions,     
+stock_quantity, 
+supplier,       
+launch_date
+from
+read_parquet('s3://my-retail-2026-analytics-5805/retail_data/products.parquet')
