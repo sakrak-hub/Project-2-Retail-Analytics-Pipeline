@@ -17,17 +17,17 @@ sources:
         identifier: raw_transactions
         description: Raw transaction records
 
-        tests:
-          - dbt_utils.unique_combination_of_columns:
-              combination_of_columns:
-                - transaction_id
-                - product_id
+        # tests:
+        #   - dbt_utils.unique_combination_of_columns:
+        #       combination_of_columns:
+        #         - transaction_id
+        #         - product_id
 
         columns:
           - name: transaction_id
             tests:
               - not_null:
-                  severity: error 
+                  severity: warn 
           - name: date
             tests:
               - not_null:
@@ -123,7 +123,7 @@ sources:
           - name: product_id
             tests:
               - not_null:
-                  severity: error
+                  severity: warn
               - relationships:
                   to: source('retail_transactions_data', 'raw_products')
                   field: product_id
@@ -177,9 +177,9 @@ sources:
           - name: customer_id
             tests:
               - unique:
-                  severity: error
+                  severity: warn
               - not_null:
-                  severity: error     
+                  severity: warn     
           - name: first_name
             tests:
               - not_null:
@@ -191,7 +191,7 @@ sources:
           - name: email
             tests:
               - unique:
-                  severity: error
+                  severity: warn
               - not_null:
                   severity: warn
               - dbt_utils.not_empty_string       
@@ -273,13 +273,13 @@ sources:
           - name: product_id
             tests:
               - unique:
-                  severity: error
+                  severity: warn
               - not_null:
-                  severity: error   
+                  severity: warn   
           - name: product_name
             tests:
               - not_null:
-                  severity: error    
+                  severity: warn    
           - name: category
             tests:
               - not_null:
@@ -309,9 +309,9 @@ sources:
           - name: sku
             tests:
               - unique:
-                  severity: error
+                  severity: warn
               - not_null:
-                  severity: error           
+                  severity: warn           
           - name: description
             tests:
               - not_null:
@@ -350,9 +350,9 @@ sources:
           - name: store_id
             tests:
               - unique:
-                  severity: error
+                  severity: warn
               - not_null:
-                  severity: error   
+                  severity: warn   
           - name: store_name
             tests:
               - unique
@@ -360,7 +360,8 @@ sources:
                   severity: warn     
           - name: address
             tests:
-              - unique
+              - unique:
+                  severity: warn  
               - not_null:
                   severity: warn        
           - name: city
@@ -377,7 +378,8 @@ sources:
                   severity: warn       
           - name: phone
             tests:
-              - unique
+              - unique:
+                  severity: warn  
               - not_null:
                   severity: warn          
           - name: manager

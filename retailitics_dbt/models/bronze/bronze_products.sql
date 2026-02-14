@@ -135,4 +135,4 @@ bronze_cleaned AS (
     FROM source_data
 )
 
-SELECT * FROM bronze_cleaned;
+SELECT * FROM bronze_cleaned

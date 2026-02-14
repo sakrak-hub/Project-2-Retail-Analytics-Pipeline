@@ -1,7 +1,7 @@
 SELECT 
-    transaction_id,
-    status,
+    transaction_id_clean, 
+    payment_status,
     refund_reason
 FROM {{ ref('bronze_transactions') }}
-WHERE status = 'Refunded'
+WHERE payment_status = 'Refunded'
     AND (refund_reason IS NULL OR refund_reason = '')

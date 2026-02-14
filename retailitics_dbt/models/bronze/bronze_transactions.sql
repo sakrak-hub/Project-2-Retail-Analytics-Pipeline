@@ -99,7 +99,7 @@ bronze_cleaned AS (
 
         subtotal,
         tax_amount,
-        total_amount,
+        total_amount, 
         items_count,
         loyalty_points_earned,
 
@@ -109,11 +109,12 @@ bronze_cleaned AS (
         quantity,
         ROUND(unit_price,2) AS unit_price,
         discount_percent,
-        total,
+        (quantity * unit_price * (discount_percent/100)) AS discount_amount,
+        line_total,
 
         CASE WHEN transaction_id IS NULL THEN 1 ELSE 0 END AS missing_transaction_id_flag,
-        CASE WHEN date IS NULL OR TRIM(date) = '' THEN 1 ELSE 0 END AS missing_date_flag,
-        CASE WHEN time IS NULL OR TRIM(time) = '' THEN 1 ELSE 0 END AS missing_time_flag,
+        CASE WHEN date IS NULL OR TRIM(date::VARCHAR) = '' THEN 1 ELSE 0 END AS missing_date_flag,
+        CASE WHEN time IS NULL OR TRIM(time::VARCHAR) = '' THEN 1 ELSE 0 END AS missing_time_flag,
         CASE WHEN customer_id IS NULL THEN 1 ELSE 0 END AS missing_customer_id_flag,
         CASE WHEN product_id IS NULL THEN 1 ELSE 0 END AS missing_product_id_flag,
         CASE WHEN cashier_id IS NULL OR TRIM(cashier_id) = '' THEN 1 ELSE 0 END AS missing_cashier_id_flag,
@@ -148,4 +149,4 @@ bronze_cleaned AS (
     FROM source_data
 )
 
-SELECT * FROM bronze_cleaned;
+SELECT * FROM bronze_cleaned

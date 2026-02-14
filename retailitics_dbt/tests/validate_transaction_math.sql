@@ -1,10 +1,10 @@
 WITH transaction_validation AS (
     SELECT 
-        transaction_id,
+        transaction_id_clean,
         subtotal,
         tax_amount,
         total_amount,
-        ABS((subtotal + tax_amount) - total_amount) as difference
+        ROUND(ABS((subtotal + tax_amount) - total_amount),2) as difference
     FROM {{ ref('bronze_transactions') }}
 )
 SELECT *
