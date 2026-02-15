@@ -19,12 +19,12 @@ with DAG(
         'retries': 2,
         'retry_delay': timedelta(minutes=5),
     },
-    description='Production retail analytics pipeline with quality gates',
-    schedule='0 * * * *', 
+    description='Processing raw data for data warehouse and presentation',
+    schedule=None, 
     start_date=datetime(2026, 1, 1),
     catchup=False,
     max_active_runs=1,
-    tags=['retail', 'dbt', 'quality-gates', 'incremental']
+    tags=['retail', 'dbt', 'quality-gates', 'incremental', 'silver', 'gold']
 ) as dag:
 
     silver_layer_start = EmptyOperator(task_id='silver_layer_start')

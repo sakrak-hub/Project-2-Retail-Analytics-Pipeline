@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 def check_bronze_quality_gate(**context):
     
+    ti = context['ti']
     db_path = '/opt/airflow/dbt/warehouse.duckdb'
     conn = duckdb.connect(db_path, read_only=True)
     
@@ -55,6 +56,12 @@ def check_bronze_quality_gate(**context):
         BRONZE_MIN_AVG_ITEMS = 1.0
         BRONZE_MAX_AVG_ITEMS = 5.0
         
+        ti.xcom_push(key='bronze_quality_score', value=float(score))
+        ti.xcom_push(key='bronze_duplicate_pct', value=float(dup_pct))
+        ti.xcom_push(key='bronze_total_lines', value=int(total_lines))
+        ti.xcom_push(key='bronze_health_status', value=health)
+        ti.xcom_push(key='bronze_quality_tier', value=tier)
+
         passed = (
             score >= BRONZE_MIN_QUALITY_SCORE and
             dup_pct <= BRONZE_MAX_DUPLICATE_PCT and
@@ -69,7 +76,7 @@ def check_bronze_quality_gate(**context):
             logger.info(f"   Avg Items/Txn: {avg_items} in [{BRONZE_MIN_AVG_ITEMS}, {BRONZE_MAX_AVG_ITEMS}]")
             logger.info("="*60)
             logger.info("🚀 Continuing to Silver layer")
-            return 'silver_layer_start'
+            return 'trigger_data_staging_modelling'
         else:
             logger.error("❌ QUALITY GATE FAILED")
             if score < BRONZE_MIN_QUALITY_SCORE:
@@ -80,7 +87,7 @@ def check_bronze_quality_gate(**context):
                 logger.error(f"   Unusual grain: {avg_items} items/txn")
             logger.info("="*60)
             
-            raise ValueError(f"Bronze quality gate failed: score={score:.1f}, dup={dup_pct}%")
+            return 'skip_staging'
     
     finally:
         conn.close()
@@ -307,11 +314,34 @@ with DAG(
         python_callable=check_bronze_quality_gate,
     )
 
-    trigger = TriggerDagRunOperator(
+    trigger_staging = TriggerDagRunOperator(
         task_id='trigger_data_staging_modelling',
-        trigger_dag_id='retail_analytics_dbt_duckdb_staging_modelling'
+        trigger_dag_id='retail_analytics_dbt_duckdb_staging_modelling',
+        wait_for_completion=True,
+        poke_interval=60,
+        conf={
+            'triggered_by': 'bronze_quality_gate',
+            'execution_date': '{{ logical_date }}',
+            'bronze_run_id': '{{ run_id }}',
+            'bronze_quality_score': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_quality_score") }}',
+            'bronze_duplicate_pct': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_duplicate_pct") }}',
+            'bronze_total_lines': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_total_lines") }}',
+            'bronze_health_status': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_health_status") }}',
+            'bronze_quality_tier': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_quality_tier") }}'
+        },
+
+        allowed_states=['success'],
+        failed_states=['failed']
     )
 
+    skip_staging = EmptyOperator(
+        task_id='skip_staging'
+    )
+
+    pipeline_complete = EmptyOperator(
+        task_id='pipeline_complete',
+        trigger_rule='none_failed_min_one_success'
+    )
 
     start >> raw_layer_start
 
@@ -327,7 +357,11 @@ with DAG(
     
     continue_pipeline >> dbt_test_bronze >> dbt_create_bronze_profile >> bronze_quality_gate
 
-    bronze_quality_gate >> trigger
+    bronze_quality_gate >> [trigger_staging, skip_staging]
+
+    trigger_staging >> pipeline_complete
+
+    skip_staging >> pipeline_complete
 
     dag.doc_md = """
 # Retail Analytics Pipeline with Quality Gates
