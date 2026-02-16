@@ -355,7 +355,7 @@ with DAG(
 
     schema_reconcile_bronze >> log_schema_change_task >> dbt_test_bronze
     
-    continue_pipeline >> dbt_test_bronze >> dbt_create_bronze_profile >> bronze_quality_gate
+    continue_pipeline >> dbt_test_bronze >> dbt_create_bronze_profile >> bronze_quality_gate 
 
     bronze_quality_gate >> [trigger_staging, skip_staging]
 

@@ -167,7 +167,7 @@ bronze_cleaned AS (
             COALESCE(city, '') || '|' ||
             COALESCE(state, '') || '|' ||
             COALESCE(zip_code, '') || '|' ||
-            COALESCE(CAST(total_lifetime_value AS VARCHAR), '')
+            COALESCE(CAST(total_lifetime_value AS VARCHAR), '') 
         ) AS _row_hash,
 
         'raw_customers' AS _source_table

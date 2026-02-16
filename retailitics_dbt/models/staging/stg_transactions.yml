@@ -1,0 +1,321 @@
+version: 2
+
+models:
+  - name: stg_transactions
+    description: >
+      Staging table for transactions with duplicates removed and bad data filtered out.
+      Deduplicates on (transaction_id, product_id) composite key, keeping most recent load
+      and preferring non-refunds over refunds. Ready for analytics.
+    
+    config:
+      tags: ['staging', 'silver', 'transactions']
+    
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - transaction_id
+            - product_id
+          config:
+            severity: error
+            error_if: ">0"
+    
+    columns:
+      - name: line_item_key
+        description: Surrogate key combining transaction_id, product_id, and _loaded_at
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+      
+      - name: transaction_id
+        description: Clean transaction ID (DUP prefix removed)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: product_id
+        description: Product identifier
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - relationships:
+              to: ref('stg_products')
+              field: product_id
+              config:
+                severity: warn
+                error_if: ">100"
+      
+      - name: customer_id
+        description: Customer identifier
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
+              config:
+                severity: warn
+                error_if: ">100"
+      
+      - name: store_id
+        description: Store identifier
+        tests:
+          - not_null:
+              config:
+                severity: warn 
+          - relationships:
+              to: ref('stg_stores')
+              field: store_id
+              config:
+                severity: warn
+                error_if: ">50"
+      
+      - name: transaction_date
+        description: Transaction date
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_DATE"
+              config:
+                severity: error
+                error_if: ">0"
+          - dbt_utils.expression_is_true:
+              expression: ">= '2020-01-01'"
+              config:
+                severity: warn
+                error_if: ">100"
+      
+      - name: transaction_year
+        description: Year extracted from transaction_date
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 2020
+              max_value: 2030
+              config:
+                severity: error
+      
+      - name: transaction_month
+        description: Month extracted from transaction_date
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 12
+              inclusive: true
+              config:
+                severity: error
+      
+      - name: transaction_day_of_week
+        description: Day of week (0=Sunday, 6=Saturday)
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 6
+              inclusive: true
+              config:
+                severity: error
+      
+      - name: is_weekend
+        description: TRUE if transaction occurred on Saturday or Sunday
+        tests:
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+      
+      - name: day_name
+        description: Name of the day (Monday, Tuesday, etc.)
+        tests:
+          - accepted_values:
+              values: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+              config:
+                severity: error
+      
+      - name: time_of_day
+        description: Time period categorization
+        tests:
+          - accepted_values:
+              values: 
+                - 'Morning (6-11am)'
+                - 'Afternoon (12-4pm)'
+                - 'Evening (5-8pm)'
+                - 'Night (9-11pm)'
+                - 'Late Night (12-5am)'
+                - 'Unknown'
+              config:
+                severity: warn
+      
+      - name: payment_method
+        description: Payment method used
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['CASH', 'CREDIT CARD', 'DEBIT CARD', 'MOBILE PAYMENT', 'GIFT CARD', 'CHECK']
+              config:
+                severity: warn
+                error_if: ">1000" 
+                
+      
+      - name: payment_status
+        description: Payment status
+        tests:
+          - accepted_values:
+              values: ['COMPLETED', 'PENDING', 'FAILED', 'REFUNDED', 'CANCELLED']
+              config:
+                severity: warn
+      
+      - name: quantity_clean
+        description: Validated quantity (negatives fixed for non-refunds)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+              where: "is_refund = FALSE"
+              config:
+                severity: error
+                error_if: ">0"
+      
+      - name: unit_price
+        description: Unit price per item
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+              config:
+                severity: error
+      
+      - name: line_total_clean
+        description: Validated line total (cleaned/corrected)
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: discount_percent
+        description: Discount percentage applied
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+              config:
+                severity: warn
+                error_if: ">100"
+      
+      - name: is_refund
+        description: TRUE if this is a refund transaction
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+      
+      - name: has_promotion
+        description: TRUE if promotion code was applied
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+      
+      - name: has_discount
+        description: TRUE if any discount was applied
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+      
+      - name: is_bulk_purchase
+        description: TRUE if quantity >= 10
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+      
+      - name: is_high_value_item
+        description: TRUE if line_total > 1000
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+      
+      - name: transaction_type
+        description: Categorization of transaction type
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values:
+                - 'Refund'
+                - 'Promotional Sale'
+                - 'Promotion'
+                - 'Deep Discount'
+                - 'Discounted'
+                - 'Regular Sale'
+              config:
+                severity: warn
+                error_if: ">500"
+      
+      - name: data_quality_status
+        description: Overall data quality indicator
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['CLEAN', 'CORRECTED', 'INCOMPLETE']
+              config:
+                severity: warn
+      
+      - name: bronze_loaded_at
+        description: When this record was loaded to bronze (from source)
+        tests:
+          - not_null
+      
+      - name: staging_loaded_at
+        description: When this record was loaded to staging
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_TIMESTAMP"
+              config:
+                severity: error
+      
+      - name: _source_system
+        description: Source system identifier
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['RETAIL_S3']
+              config:
+                severity: warn
+
+tests:
+  - name: test_no_transaction_product_duplicates
+    description: Verify no duplicate (transaction_id, product_id) pairs exist
+    
+  - name: test_line_total_matches_calculation
+    description: Verify line_total_clean matches quantity * unit_price * (1 - discount_percent/100) for non-zero lines
+    
+  - name: test_refund_amounts_are_negative_or_zero
+    description: Verify refund transactions have negative or zero amounts
+    
+  - name: test_weekend_flag_consistency
+    description: Verify is_weekend matches transaction_day_of_week (0 or 6)

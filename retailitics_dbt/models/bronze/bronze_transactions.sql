@@ -130,7 +130,7 @@ bronze_cleaned AS (
         CASE WHEN unit_price > 10000 THEN 1 ELSE 0 END AS high_unit_price_flag,
         CASE WHEN total_amount > 100000 THEN 1 ELSE 0 END AS high_total_amount_flag,
 
-        CURRENT_TIMESTAMP AS _loaded_at,
+        CURRENT_TIMESTAMP AS _loaded_at, 
         '{{ run_started_at }}' AS _batch_id,
         '{{ var("source_system", "RETAIL_S3") }}' AS _source_system,
 

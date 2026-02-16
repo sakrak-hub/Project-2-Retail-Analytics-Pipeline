@@ -89,13 +89,13 @@ staging_cleaned AS (
         END AS customer_tenure_category,
         
         customer_segment,
-        lifetime_value,
+        total_lifetime_value AS lifetime_value,
 
         CASE 
-            WHEN lifetime_value >= 5000 THEN 'High Value'
-            WHEN lifetime_value >= 2000 THEN 'Medium Value'
-            WHEN lifetime_value >= 500 THEN 'Low Value'
-            WHEN lifetime_value >= 0 THEN 'Very Low Value'
+            WHEN total_lifetime_value >= 5000 THEN 'High Value'
+            WHEN total_lifetime_value >= 2000 THEN 'Medium Value'
+            WHEN total_lifetime_value >= 500 THEN 'Low Value'
+            WHEN total_lifetime_value >= 0 THEN 'Very Low Value'
             ELSE 'Negative'
         END AS ltv_category,
 
