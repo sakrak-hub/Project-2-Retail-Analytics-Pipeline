@@ -76,7 +76,7 @@ def check_bronze_quality_gate(**context):
             logger.info(f"   Avg Items/Txn: {avg_items} in [{BRONZE_MIN_AVG_ITEMS}, {BRONZE_MAX_AVG_ITEMS}]")
             logger.info("="*60)
             logger.info("🚀 Continuing to Silver layer")
-            return 'trigger_data_staging_modelling'
+            return 'trigger_data_staging'
         else:
             logger.error("❌ QUALITY GATE FAILED")
             if score < BRONZE_MIN_QUALITY_SCORE:
@@ -315,13 +315,14 @@ with DAG(
     )
 
     trigger_staging = TriggerDagRunOperator(
-        task_id='trigger_data_staging_modelling',
-        trigger_dag_id='retail_analytics_dbt_duckdb_staging_modelling',
+        task_id='trigger_data_staging',
+        trigger_dag_id='retail_analytics_dbt_duckdb_staging',
         wait_for_completion=True,
         poke_interval=60,
         conf={
             'triggered_by': 'bronze_quality_gate',
-            'execution_date': '{{ logical_date }}',
+            'logical_date': '{{ logical_date }}',
+            "target_start_date": "{{ ds }}",
             'bronze_run_id': '{{ run_id }}',
             'bronze_quality_score': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_quality_score") }}',
             'bronze_duplicate_pct': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_duplicate_pct") }}',
