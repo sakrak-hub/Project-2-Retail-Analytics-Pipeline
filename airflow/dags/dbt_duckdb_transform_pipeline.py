@@ -3,6 +3,7 @@ from airflow.providers.standard.operators.python import PythonOperator, BranchPy
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.providers.standard.sensors.external_task import ExternalTaskSensor
 from datetime import datetime, timedelta
 import logging
 import duckdb
@@ -17,7 +18,7 @@ def check_bronze_quality_gate(**context):
     conn = duckdb.connect(db_path, read_only=True)
     
     try:
-        query = """
+        query = f"""
         SELECT 
             total_line_items,
             unique_txn_product_combinations,
@@ -27,7 +28,6 @@ def check_bronze_quality_gate(**context):
             health_status,
             quality_tier
         FROM retail_transactions_data.bronze_transactions_profile
-        WHERE profile_date = CURRENT_DATE
         """
         
         result = conn.execute(query).fetchone()
@@ -248,7 +248,7 @@ with DAG(
     description='Production retail analytics pipeline with quality gates',
     schedule='0 * * * *', 
     start_date=datetime(2026, 1, 1),
-    catchup=False,
+    catchup=True,
     max_active_runs=1,
     tags=['retail', 'dbt', 'quality-gates', 'incremental']
 ) as dag:
@@ -319,6 +319,7 @@ with DAG(
         trigger_dag_id='retail_analytics_dbt_duckdb_staging',
         wait_for_completion=True,
         poke_interval=60,
+        logical_date = "{{ dag_run.logical_date }}",
         conf={
             'triggered_by': 'bronze_quality_gate',
             'logical_date': '{{ logical_date }}',
@@ -358,6 +359,8 @@ with DAG(
     
     continue_pipeline >> dbt_test_bronze >> dbt_create_bronze_profile >> bronze_quality_gate 
 
+    # bronze_quality_gate >> pipeline_complete
+    
     bronze_quality_gate >> [trigger_staging, skip_staging]
 
     trigger_staging >> pipeline_complete

@@ -1,6 +1,7 @@
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.bash import BashOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.amazon.aws.transfers.local_to_s3 import LocalFilesystemToS3Operator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.exceptions import AirflowSkipException
@@ -78,4 +79,9 @@ with DAG(
         replace = False,
     )
 
-    verify_file_in_s3 >> generate_retail_data >> [upload_master_data, upload_transactions_to_s3] 
+    data_gen_pipeline_complete = EmptyOperator(
+        task_id='data_gen_pipeline_complete',
+        trigger_rule='none_failed_min_one_success'
+    )
+
+    verify_file_in_s3 >> generate_retail_data >> [upload_master_data, upload_transactions_to_s3] >> data_gen_pipeline_complete

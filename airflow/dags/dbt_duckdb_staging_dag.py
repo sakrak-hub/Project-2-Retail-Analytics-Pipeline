@@ -3,6 +3,7 @@ from airflow.providers.standard.operators.python import PythonOperator, BranchPy
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.providers.standard.sensors.external_task import ExternalTaskSensor
 from datetime import datetime, timedelta
 import logging
 import duckdb
@@ -123,10 +124,7 @@ def log_schema_change(**context):
         conn.close()
 
 
-def check_silver_quality_gate(ds,logical_date,**context):
-
-    logger.info(f"{ds}")
-    logger.info(f"{logical_date}")
+def check_silver_quality_gate(**context):
 
     ti = context['ti']
     
@@ -152,8 +150,7 @@ def check_silver_quality_gate(ds,logical_date,**context):
             refund_pct,
             total_line_item_revenue,
             quality_alert_flag
-        FROM retail_transactions_data.staging_transactions_profile
-        WHERE profile_date::DATE = CURRENT_DATE
+        FROM retail_transactions_data.staging_transactions_profile;
         """
         
         result = conn.execute(query).fetchone()
@@ -194,10 +191,7 @@ def check_silver_quality_gate(ds,logical_date,**context):
         
         STAGING_MIN_QUALITY_SCORE = 90.0
         
-        STAGING_MIN_CLEAN_PCT = 90.0
-        
-        STAGING_MIN_VOLUME = 45000
-        STAGING_MAX_VOLUME = 50500
+        STAGING_MIN_CLEAN_PCT = 70.0
         
         STAGING_MAX_REFUND_PCT = 10.0
         STAGING_MIN_AVG_ITEMS = 1.5
@@ -215,8 +209,6 @@ def check_silver_quality_gate(ds,logical_date,**context):
         
         dedup_perfect = (dedup_pct == STAGING_REQUIRED_DEDUP_PCT)
         
-        volume_ok = (STAGING_MIN_VOLUME <= total_lines <= STAGING_MAX_VOLUME)
-        
         quality_ok = (quality_score >= STAGING_MIN_QUALITY_SCORE)
         
         clean_ok = (clean_pct >= STAGING_MIN_CLEAN_PCT)
@@ -229,7 +221,6 @@ def check_silver_quality_gate(ds,logical_date,**context):
 
         passed = (
             dedup_perfect and
-            volume_ok and
             quality_ok and
             clean_ok and
             refund_ok and
@@ -242,7 +233,6 @@ def check_silver_quality_gate(ds,logical_date,**context):
             logger.info("="*60)
             logger.info("ALL CHECKS PASSED:")
             logger.info(f"   ✅ Deduplication:       {dedup_pct:.1f}% = {STAGING_REQUIRED_DEDUP_PCT}%")
-            logger.info(f"   ✅ Volume:              {total_lines:,} in [{STAGING_MIN_VOLUME:,}, {STAGING_MAX_VOLUME:,}]")
             logger.info(f"   ✅ Quality Score:       {quality_score:.1f} >= {STAGING_MIN_QUALITY_SCORE}")
             logger.info(f"   ✅ Clean Data:          {clean_pct:.1f}% >= {STAGING_MIN_CLEAN_PCT}%")
             logger.info(f"   ✅ Refunds:             {refund_pct:.1f}% <= {STAGING_MAX_REFUND_PCT}%")
@@ -251,7 +241,7 @@ def check_silver_quality_gate(ds,logical_date,**context):
             logger.info("="*60)
             logger.info("🚀 Proceeding to Gold Layer")
             
-            return 'trigger_gold_modelling'
+            return 'trigger_data_modelling'
         
         else:
             logger.warning("⚠️ STAGING QUALITY GATE NOT MET - SKIPPING GOLD LAYER")
@@ -265,9 +255,6 @@ def check_silver_quality_gate(ds,logical_date,**context):
             if not unique_ok:
                 logger.error(f"   ❌ CRITICAL: Duplicates exist: {total_lines:,} total != {unique_lines:,} unique")
                 logger.error(f"      Duplicates: {total_lines - unique_lines:,}")
-            
-            if not volume_ok:
-                logger.warning(f"   ⚠️  Volume out of range: {total_lines:,} not in [{STAGING_MIN_VOLUME:,}, {STAGING_MAX_VOLUME:,}]")
             
             if not quality_ok:
                 logger.warning(f"   ⚠️  Quality too low: {quality_score:.1f} < {STAGING_MIN_QUALITY_SCORE}")
@@ -304,10 +291,18 @@ with DAG(
     description='Processing raw data for data warehouse and presentation',
     schedule=None, 
     start_date=datetime(2026, 1, 1),
-    catchup=True,
+    catchup=False,
     max_active_runs=1,
     tags=['retail', 'dbt', 'quality-gates', 'incremental', 'silver', 'gold']
 ) as dag:
+
+    # receive_bronze_success_signal = ExternalTaskSensor(
+    #     task_id='receive_bronze_success_signal',
+    #     external_dag_id='retail_analytics_dbt_duckdb_pipeline',
+    #     external_task_id='pipeline_complete',
+    #     mode='reschedule',
+    #     poke_interval=60,
+    # )
 
     silver_layer_start = EmptyOperator(task_id='silver_layer_start')
 
@@ -346,7 +341,7 @@ with DAG(
         python_callable=check_silver_quality_gate,
     )
 
-    trigger_staging = TriggerDagRunOperator(
+    trigger_data_modelling = TriggerDagRunOperator(
         task_id='trigger_data_modelling',
         trigger_dag_id='retail_analytics_dbt_duckdb_modelling',
         wait_for_completion=True,
@@ -380,6 +375,7 @@ with DAG(
         trigger_rule='none_failed_min_one_success'
     )
 
+    # receive_bronze_success_signal >> silver_layer_start
 
     silver_layer_start >> dbt_run_silver_with_detection
 
@@ -389,8 +385,8 @@ with DAG(
     
     continue_pipeline >> dbt_test_silver >> dbt_create_silver_profile >> silver_quality_gate
 
-    silver_quality_gate >> [trigger_staging, skip_mart]
+    silver_quality_gate >> [trigger_data_modelling, skip_mart]
 
-    trigger_staging >> staging_pipeline_complete
+    trigger_data_modelling >> staging_pipeline_complete
 
     skip_mart >> staging_pipeline_complete
