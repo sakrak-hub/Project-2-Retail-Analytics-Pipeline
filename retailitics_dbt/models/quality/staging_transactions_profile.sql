@@ -33,7 +33,7 @@ staging_daily AS (
         
         SUM(CASE WHEN data_quality_status = 'CLEAN' THEN 1 ELSE 0 END) AS clean_records,
         SUM(CASE WHEN data_quality_status = 'CORRECTED' THEN 1 ELSE 0 END) AS corrected_records,
-        SUM(CASE WHEN data_quality_status = 'INCOMPLETE' THEN 1 ELSE 0 END) AS incomplete_records,
+        SUM(CASE WHEN data_quality_status = 'INCOMPLETE' THEN 1 ELSE 0 END) AS incomplete_records, 
         
         ROUND(SUM(CASE WHEN data_quality_status = 'CLEAN' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS clean_pct,
         ROUND(SUM(CASE WHEN data_quality_status = 'CORRECTED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS corrected_pct,

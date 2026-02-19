@@ -166,10 +166,11 @@ staging_final AS (
         END AS transaction_type,
 
         CASE 
-            WHEN negative_quantity_flag = 1 
+            WHEN (negative_quantity_flag = 1 
                 OR negative_amount_flag = 1 
                 OR negative_line_total_flag = 1
-                OR zero_total_amount_flag = 1
+                OR zero_total_amount_flag = 1)
+                AND is_refund = FALSE
             THEN 'CORRECTED'
             WHEN missing_time_flag = 1
                 OR missing_cashier_id_flag = 1

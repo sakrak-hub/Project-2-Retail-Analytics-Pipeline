@@ -241,7 +241,7 @@ def check_silver_quality_gate(**context):
             logger.info("="*60)
             logger.info("🚀 Proceeding to Gold Layer")
             
-            return 'trigger_data_modelling'
+            return 'trigger_data_mart'
         
         else:
             logger.warning("⚠️ STAGING QUALITY GATE NOT MET - SKIPPING GOLD LAYER")
@@ -293,7 +293,7 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     catchup=False,
     max_active_runs=1,
-    tags=['retail', 'dbt', 'quality-gates', 'incremental', 'silver', 'gold']
+    tags=['retail', 'dbt', 'quality-gates', 'incremental', 'silver']
 ) as dag:
 
     # receive_bronze_success_signal = ExternalTaskSensor(
@@ -341,9 +341,9 @@ with DAG(
         python_callable=check_silver_quality_gate,
     )
 
-    trigger_data_modelling = TriggerDagRunOperator(
-        task_id='trigger_data_modelling',
-        trigger_dag_id='retail_analytics_dbt_duckdb_modelling',
+    trigger_data_mart = TriggerDagRunOperator(
+        task_id='trigger_data_mart',
+        trigger_dag_id='retail_analytics_dbt_duckdb_mart',
         wait_for_completion=True,
         poke_interval=60,
         conf={
@@ -377,7 +377,7 @@ with DAG(
 
     # receive_bronze_success_signal >> silver_layer_start
 
-    silver_layer_start >> dbt_run_silver_with_detection
+    silver_layer_start >> dbt_run_silver_with_detection 
 
     dbt_run_silver_with_detection >> [continue_pipeline, schema_reconcile_silver]
 
@@ -385,8 +385,8 @@ with DAG(
     
     continue_pipeline >> dbt_test_silver >> dbt_create_silver_profile >> silver_quality_gate
 
-    silver_quality_gate >> [trigger_data_modelling, skip_mart]
+    silver_quality_gate >> [trigger_data_mart, skip_mart]
 
-    trigger_data_modelling >> staging_pipeline_complete
+    trigger_data_mart >> staging_pipeline_complete
 
     skip_mart >> staging_pipeline_complete
