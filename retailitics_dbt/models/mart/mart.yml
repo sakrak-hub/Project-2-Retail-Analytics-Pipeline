@@ -1,0 +1,652 @@
+version: 2
+
+models:
+  # ============================================
+  # DIMENSION: dim_customers (Type 2 SCD)
+  # ============================================
+  - name: dim_customers
+    description: >
+      Customer dimension with Type 2 Slowly Changing Dimension tracking.
+      Tracks historical changes to customer address, segment, and LTV.
+      Grain: One row per customer per version.
+    
+    config:
+      tags: ['gold', 'dimension', 'scd2']
+    
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - customer_id
+            - is_current
+          where: "is_current = TRUE"
+          config:
+            severity: error
+            error_if: ">0"
+
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "valid_end_date IS NULL OR valid_end_date::TIMESTAMP > valid_start_date"
+            config:
+              severity: error
+      
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "(is_current = TRUE AND valid_end_date IS NULL) OR (is_current = FALSE AND valid_end_date IS NOT NULL)"
+            config:
+              severity: error
+    
+    columns:
+      # Surrogate Key
+      - name: customer_key
+        description: Surrogate key for customer dimension (MD5 hash)
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+      
+      # Natural Key
+      - name: customer_id
+        description: Natural key from source system
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      # SCD2 Fields
+      - name: is_current
+        description: TRUE if this is the current active version
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                config:
+                  severity: error
+      
+      - name: valid_start_date
+        description: When this version became active
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "<= CURRENT_TIMESTAMP"
+                config:
+                  severity: error
+      
+      - name: valid_end_date
+        description: When this version was superseded (NULL if current)
+      
+      - name: age
+        description: Customer age in years
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 18
+              max_value: 120
+              config:
+                severity: warn
+      
+      - name: age_group
+        description: Age group categorization
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Under 18', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
+                config:
+                  severity: warn
+      
+      - name: gender
+        description: Customer gender
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Male', 'Female', 'Other', 'Prefer not to say']
+                config:
+                  severity: warn
+      
+      # Business Attributes
+      - name: customer_tenure_category
+        description: Customer tenure categorization
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['New (< 3 months)', 'Recent (3-12 months)', 'Established (1-2 years)', 'Loyal (2+ years)']
+                config:
+                  severity: warn
+      
+      - name: ltv_category
+        description: Lifetime value category
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['High Value', 'Medium Value', 'Low Value', 'Very Low Value', 'Negative']
+                config:
+                  severity: warn
+      
+      - name: quality_tier
+        description: Data quality tier
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['CLEAN', 'ACCEPTABLE', 'POOR']
+                config:
+                  severity: warn
+
+  - name: dim_products
+    description: >
+      Product dimension with Type 2 Slowly Changing Dimension tracking.
+      Tracks historical changes to product pricing, category, and supplier.
+      Grain: One row per product per version.
+    
+    config:
+      tags: ['gold', 'dimension', 'scd2']
+    
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - product_id
+            - is_current
+          where: "is_current = TRUE"
+          config:
+            severity: error
+    
+    columns:
+      # Surrogate Key
+      - name: product_key
+        description: Surrogate key for product dimension (MD5 hash)
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+      
+      # Natural Key
+      - name: product_id
+        description: Natural key from source system
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      # SCD2 Fields
+      - name: is_current
+        description: TRUE if this is the current active version
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                config:
+                  severity: error
+      
+      - name: valid_start_date
+        description: When this version became active
+        tests:
+          - not_null
+      
+      - name: valid_end_date
+        description: When this version was superseded (NULL if current)
+        tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "IS NULL OR valid_end_date::TIMESTAMP > valid_start_date"
+                config:
+                  severity: error
+      
+      - name: selling_price
+        description: Current selling price
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+                config:
+                  severity: error
+      
+      - name: cost_price
+        description: Cost price from supplier
+        tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+                where: "cost_price IS NOT NULL"
+                config:
+                  severity: error
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "<= selling_price"
+                where: "cost_price IS NOT NULL"
+                config:
+                  severity: warn
+                  error_if: ">100"
+      
+      - name: profit_margin_pct
+        description: Profit margin percentage
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -100
+              max_value: 100
+              config:
+                severity: warn
+      
+      # Categories
+      - name: price_category
+        description: Price category classification
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['LUXURY', 'CLEARANCE', 'STANDARD']
+                config:
+                  severity: warn
+      
+      - name: weight_category
+        description: Weight category
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Unknown', 'Light (< 1 kg)', 'Medium (1-5 kg)', 'Heavy (5-25 kg)', 'Very Heavy (25+ kg)']
+                config:
+                  severity: warn
+      
+      - name: product_maturity
+        description: Product lifecycle stage
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Unknown', 'New (< 1 month)', 'Recent (1-3 months)', 'Current (< 1 year)', 'Established (1-2 years)', 'Mature (2+ years)']
+                config:
+                  severity: warn
+
+  # ============================================
+  # DIMENSION: dim_stores (Type 2 SCD)
+  # ============================================
+  - name: dim_stores
+    description: >
+      Store dimension with Type 2 Slowly Changing Dimension tracking.
+      Tracks historical changes to store manager, type, and operational status.
+      Grain: One row per store per version.
+    
+    config:
+      tags: ['gold', 'dimension', 'scd2']
+    
+    tests:
+      # Critical: Ensure only one current version per store
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - store_id
+            - is_current
+          where: "is_current = TRUE"
+          config:
+            severity: error
+    
+    columns:
+      # Surrogate Key
+      - name: store_key
+        description: Surrogate key for store dimension (MD5 hash)
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+      
+      # Natural Key
+      - name: store_id
+        description: Natural key from source system
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      # SCD2 Fields
+      - name: is_current
+        description: TRUE if this is the current active version
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                config:
+                  severity: error
+      
+      - name: valid_start_date
+        description: When this version became active
+        tests:
+          - not_null
+      
+      - name: valid_end_date
+        description: When this version was superseded (NULL if current)
+        tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "IS NULL OR valid_end_date::TIMESTAMP > valid_start_date"
+                config:
+                  severity: error
+      
+      - name: region
+        description: Geographic region
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['West', 'South', 'Northeast', 'Midwest', 'Other']
+                config:
+                  severity: warn
+      
+      - name: store_category
+        description: Store type category
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Flagship', 'Outlet', 'Temporary', 'Warehouse', 'Standard']
+                config:
+                  severity: warn
+      
+      - name: store_maturity_tier
+        description: Store age categorization
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Unknown', 'Brand New', 'Growing', 'Established', 'Mature', 'Legacy']
+                config:
+                  severity: warn
+      
+      - name: is_fully_operational
+        description: TRUE if store is fully operational
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+
+  # ============================================
+  # DIMENSION: dim_date (Generated)
+  # ============================================
+  - name: dim_date
+    description: >
+      Pre-generated date dimension for time intelligence.
+      Range: 2020-01-01 to 2030-12-31 (4,018 days).
+      Grain: One row per calendar date.
+    
+    config:
+      tags: ['gold', 'dimension', 'generated']
+    
+    columns:
+      # Primary Key
+      - name: date_key
+        description: Surrogate key (YYYYMMDD format as integer)
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+      
+      - name: date_actual
+        description: Actual date value
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= '2020-01-01'"
+                config:
+                  severity: error
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "<= '2030-12-31'"
+                config:
+                  severity: error
+      
+      # Date Components
+      - name: year
+        description: Year (2020-2030)
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 2020
+              max_value: 2030
+              inclusive: true
+              config:
+                severity: error
+      
+      - name: quarter
+        description: Quarter (1-4)
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 4
+              inclusive: true
+              config:
+                severity: error
+      
+      - name: month
+        description: Month (1-12)
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 12
+              inclusive: true
+              config:
+                severity: error
+      
+      - name: day_of_week
+        description: Day of week (0=Sunday, 6=Saturday)
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 6
+              inclusive: true
+              config:
+                severity: error
+      
+      - name: day_name
+        description: Name of the day
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+                config:
+                  severity: error
+      
+      # Flags
+      - name: is_weekend
+        description: TRUE if Saturday or Sunday
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                config:
+                  severity: error
+      
+      - name: is_weekday
+        description: TRUE if Monday-Friday
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                config:
+                  severity: error
+
+  - name: fact_sales
+    description: >
+      Sales fact table at line item grain.
+      Links to all dimension tables via surrogate keys.
+      Grain: One row per transaction line item.
+    
+    config:
+      tags: ['gold', 'fact']
+    
+    tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "ABS(gross_amount - (quantity * unit_price)) < 0.02"
+            where: "quantity > 0 AND unit_price > 0"
+            config:
+              severity: warn
+              error_if: ">1000"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "ABS(line_profit - (line_total - total_cost)) < 0.02"
+            where: "total_cost > 0 AND line_total <> 0"
+            config:
+              severity: warn
+              error_if: ">500"
+
+    columns:
+      # Primary Key
+      - name: sales_key
+        description: Primary key (same as line_item_key from staging)
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+      
+      # Foreign Keys
+      - name: date_key
+        description: Foreign key to dim_date
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+              config:
+                severity: warn
+                error_if: ">100"
+      
+      - name: customer_key
+        description: Foreign key to dim_customers
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: product_key
+        description: Foreign key to dim_products
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: store_key
+        description: Foreign key to dim_stores
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: quantity
+        description: Quantity sold
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+                where: "is_refund = FALSE"
+                config:
+                  severity: error
+      
+      - name: line_total
+        description: Line item revenue
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: gross_amount
+        description: Quantity × Unit Price
+        
+      - name: line_profit
+        description: Revenue - Cost
+      
+      - name: line_profit_margin_pct
+        description: (Profit / Revenue) × 100
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -100
+              max_value: 100
+              config:
+                severity: warn
+                error_if: ">1000"
+      
+      # Flags
+      - name: is_refund
+        description: TRUE if this is a refund
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+      
+      - name: is_weekend
+        description: TRUE if transaction on weekend
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+      
+      - name: transaction_type
+        description: Type of transaction
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Refund', 'Promotional Sale', 'Promotion', 'Deep Discount', 'Discounted', 'Regular Sale']
+                config:
+                  severity: warn
+      
+      - name: data_quality_status
+        description: Data quality indicator
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['CLEAN', 'CORRECTED', 'INCOMPLETE']
+                config:
+                  severity: warn
+
+tests:
+  - name: test_scd2_no_overlapping_versions_customers
+    description: Verify no overlapping date ranges for same customer
+    
+  - name: test_scd2_no_overlapping_versions_products
+    description: Verify no overlapping date ranges for same product
+    
+  - name: test_scd2_no_overlapping_versions_stores
+    description: Verify no overlapping date ranges for same store
+    
+  - name: test_revenue_not_zero
+    description: Verify non-refund sales have positive revenue
+    
+  - name: test_profit_calculation
+    description: Verify profit = revenue - cost
+    
+  - name: test_dim_date_completeness
+    description: Verify dim_date has no gaps

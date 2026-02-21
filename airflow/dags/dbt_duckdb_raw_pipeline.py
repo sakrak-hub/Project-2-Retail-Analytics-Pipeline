@@ -235,7 +235,7 @@ def rename_column(**context):
         conn.close()
 
 with DAG(
-    'retail_analytics_dbt_duckdb_pipeline',
+    'retail_analytics_dbt_duckdb_raw',
     default_args={
         'owner': 'Sakkaravarthi',
         'depends_on_past': False,
