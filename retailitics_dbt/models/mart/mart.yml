@@ -1,9 +1,9 @@
 version: 2
 
 models:
-  # ============================================
-  # DIMENSION: dim_customers (Type 2 SCD)
-  # ============================================
+  
+  
+  
   - name: dim_customers
     description: >
       Customer dimension with Type 2 Slowly Changing Dimension tracking.
@@ -36,7 +36,7 @@ models:
               severity: error
     
     columns:
-      # Surrogate Key
+      
       - name: customer_key
         description: Surrogate key for customer dimension (MD5 hash)
         tests:
@@ -47,7 +47,7 @@ models:
               config:
                 severity: error
       
-      # Natural Key
+      
       - name: customer_id
         description: Natural key from source system
         tests:
@@ -55,7 +55,7 @@ models:
               config:
                 severity: error
       
-      # SCD2 Fields
+      
       - name: is_current
         description: TRUE if this is the current active version
         tests:
@@ -110,7 +110,7 @@ models:
                 config:
                   severity: warn
       
-      # Business Attributes
+      
       - name: customer_tenure_category
         description: Customer tenure categorization
         tests:
@@ -157,7 +157,7 @@ models:
             severity: error
     
     columns:
-      # Surrogate Key
+      
       - name: product_key
         description: Surrogate key for product dimension (MD5 hash)
         tests:
@@ -168,7 +168,7 @@ models:
               config:
                 severity: error
       
-      # Natural Key
+      
       - name: product_id
         description: Natural key from source system
         tests:
@@ -176,7 +176,7 @@ models:
               config:
                 severity: error
       
-      # SCD2 Fields
+      
       - name: is_current
         description: TRUE if this is the current active version
         tests:
@@ -239,7 +239,7 @@ models:
               config:
                 severity: warn
       
-      # Categories
+      
       - name: price_category
         description: Price category classification
         tests:
@@ -267,9 +267,9 @@ models:
                 config:
                   severity: warn
 
-  # ============================================
-  # DIMENSION: dim_stores (Type 2 SCD)
-  # ============================================
+  
+  
+  
   - name: dim_stores
     description: >
       Store dimension with Type 2 Slowly Changing Dimension tracking.
@@ -280,7 +280,7 @@ models:
       tags: ['gold', 'dimension', 'scd2']
     
     tests:
-      # Critical: Ensure only one current version per store
+      
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
             - store_id
@@ -290,7 +290,7 @@ models:
             severity: error
     
     columns:
-      # Surrogate Key
+      
       - name: store_key
         description: Surrogate key for store dimension (MD5 hash)
         tests:
@@ -301,7 +301,7 @@ models:
               config:
                 severity: error
       
-      # Natural Key
+      
       - name: store_id
         description: Natural key from source system
         tests:
@@ -309,7 +309,7 @@ models:
               config:
                 severity: error
       
-      # SCD2 Fields
+      
       - name: is_current
         description: TRUE if this is the current active version
         tests:
@@ -369,9 +369,9 @@ models:
               arguments:
                 values: [true, false]
 
-  # ============================================
-  # DIMENSION: dim_date (Generated)
-  # ============================================
+  
+  
+  
   - name: dim_date
     description: >
       Pre-generated date dimension for time intelligence.
@@ -382,7 +382,7 @@ models:
       tags: ['gold', 'dimension', 'generated']
     
     columns:
-      # Primary Key
+      
       - name: date_key
         description: Surrogate key (YYYYMMDD format as integer)
         tests:
@@ -413,7 +413,7 @@ models:
                 config:
                   severity: error
       
-      # Date Components
+      
       - name: year
         description: Year (2020-2030)
         tests:
@@ -468,7 +468,7 @@ models:
                 config:
                   severity: error
       
-      # Flags
+      
       - name: is_weekend
         description: TRUE if Saturday or Sunday
         tests:
@@ -515,7 +515,7 @@ models:
               error_if: ">500"
 
     columns:
-      # Primary Key
+      
       - name: sales_key
         description: Primary key (same as line_item_key from staging)
         tests:
@@ -526,7 +526,7 @@ models:
               config:
                 severity: error
       
-      # Foreign Keys
+      
       - name: date_key
         description: Foreign key to dim_date
         tests:
@@ -597,7 +597,7 @@ models:
                 severity: warn
                 error_if: ">1000"
       
-      # Flags
+      
       - name: is_refund
         description: TRUE if this is a refund
         tests:
@@ -631,6 +631,246 @@ models:
                 values: ['CLEAN', 'CORRECTED', 'INCOMPLETE']
                 config:
                   severity: warn
+
+  - name: mart_daily_sales
+    description: >
+      Daily sales performance summary with comprehensive metrics.
+      Pre-aggregated from fact_sales for fast querying.
+      Grain: One row per calendar date.
+    
+    config:
+      tags: ['mart', 'aggregated', 'daily', 'business']
+    
+    columns:
+      - name: date_actual
+        description: Calendar date
+        tests:
+          - unique
+          - not_null
+      
+      - name: total_orders
+        description: Total number of orders (excluding refunds)
+        tests:
+          - not_null
+      
+      - name: gross_revenue
+        description: Total revenue before discounts
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      
+      - name: total_profit
+        description: Total profit (revenue - cost)
+        tests:
+          - not_null
+      
+      - name: profit_margin_pct
+        description: Profit margin percentage
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -100
+              max_value: 100
+
+  - name: mart_customer_segments
+    description: >
+      Customer segmentation analysis by segment, LTV, tenure, demographics.
+      Pre-aggregated customer behavior metrics.
+      Grain: One row per segment combination.
+    
+    config:
+      tags: ['mart', 'aggregated', 'customer', 'business']
+    
+    tests:
+      - dbt_utils.expression_is_true:
+          expression: "customer_count > 0"
+          config:
+            severity: error
+    
+    columns:
+      - name: customer_segment
+        description: Customer segment classification
+        tests:
+          - not_null
+      
+      - name: customer_count
+        description: Number of customers in segment
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "> 0"
+      
+      - name: segment_revenue
+        description: Total revenue from segment
+        tests:
+          - not_null
+      
+      - name: customer_quality_score
+        description: Segment quality score (0-100)
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+
+  - name: mart_product_performance
+    description: >
+      Product performance analytics with profitability, rankings, and ABC classification.
+      One row per product (current version only).
+      Grain: One row per product_id.
+    
+    config:
+      tags: ['mart', 'aggregated', 'product', 'business']
+    
+    columns:
+      - name: product_id
+        description: Unique product identifier
+        tests:
+          - unique
+          - not_null
+      
+      - name: total_revenue
+        description: Total revenue generated by product
+        tests:
+          - not_null
+      
+      - name: total_profit
+        description: Total profit from product
+        tests:
+          - not_null
+      
+      - name: revenue_rank
+        description: Revenue ranking (1 = highest)
+        tests:
+          - not_null
+      
+      - name: abc_classification
+        description: ABC classification based on revenue
+        tests:
+          - accepted_values:
+              values: ['A - Top Performers', 'B - Steady Performers', 'C - Low Performers']
+
+  - name: mart_store_performance
+    description: >
+      Store operations and performance analytics.
+      Includes regional rankings, health scores, and operational KPIs.
+      Grain: One row per store_id.
+    
+    config:
+      tags: ['mart', 'aggregated', 'store', 'business']
+    
+    columns:
+      - name: store_id
+        description: Unique store identifier
+        tests:
+          - unique
+          - not_null
+      
+      - name: total_revenue
+        description: Total store revenue
+        tests:
+          - not_null
+      
+      - name: store_health_score
+        description: Overall store health score (0-100)
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+      
+      - name: performance_tier
+        description: Store performance tier classification
+        tests:
+          - accepted_values:
+              values: 
+                - 'Top Tier (Top 20%)'
+                - 'High Performers (60-80%)'
+                - 'Average Performers (40-60%)'
+                - 'Below Average (20-40%)'
+                - 'Bottom Tier (Bottom 20%)'
+
+  - name: mart_cohort_analysis
+    description: >
+      Customer retention and cohort behavior analysis.
+      Tracks customer lifetime value and retention rates over time.
+      Grain: One row per cohort per activity month.
+    
+    config:
+      tags: ['mart', 'aggregated', 'cohort', 'business']
+    
+    columns:
+      - name: cohort_month
+        description: Month when cohort first purchased
+        tests:
+          - not_null
+      
+      - name: activity_month
+        description: Month of activity being measured
+        tests:
+          - not_null
+      
+      - name: months_since_first_purchase
+        description: Months elapsed since first purchase
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      
+      - name: retention_rate_pct
+        description: Percentage of cohort still active
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+      
+      - name: customer_ltv_to_date
+        description: Customer lifetime value to date
+        tests:
+          - not_null
+
+  - name: mart_executive_summary
+    description: >
+      Executive KPI dashboard with period-over-period comparisons.
+      Includes YoY, MoM, WoW changes and cumulative metrics.
+      Grain: One row per calendar date.
+    
+    config:
+      tags: ['mart', 'aggregated', 'executive', 'kpi', 'business']
+    
+    columns:
+      - name: date_actual
+        description: Calendar date
+        tests:
+          - unique
+          - not_null
+      
+      - name: gross_revenue
+        description: Gross revenue for the day
+        tests:
+          - not_null
+      
+      - name: gross_profit
+        description: Gross profit for the day
+        tests:
+          - not_null
+      
+      - name: gross_margin_pct
+        description: Gross profit margin percentage
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -100
+              max_value: 100
+      
+      - name: ytd_revenue
+        description: Year-to-date cumulative revenue
+        tests:
+          - not_null
+      
+      - name: margin_performance
+        description: Margin performance classification
+        tests:
+          - accepted_values:
+              values: ['Excellent', 'Good', 'Fair', 'Poor']
 
 tests:
   - name: test_scd2_no_overlapping_versions_customers

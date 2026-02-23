@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import logging
 import duckdb
 import subprocess
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ def run_gold_with_schema_detection(**context):
 
     ti = context['ti']
     
-    cmd = "cd /opt/airflow/dbt && dbt run --select mart --profiles-dir /opt/airflow/dbt"
+    cmd = "cd /opt/airflow/dbt && dbt run --select mart/dim --profiles-dir /opt/airflow/dbt && dbt run --select mart/fact --profiles-dir /opt/airflow/dbt"
     
     result = subprocess.run(
         cmd,
@@ -472,6 +473,11 @@ with DAG(
         python_callable=run_gold_with_schema_detection
     )
 
+    dbt_run_mart_views = BashOperator(
+    task_id='dbt_run_mart_views',
+    bash_command='cd /opt/airflow/dbt && dbt run --select models/mart/view --profiles-dir /opt/airflow/dbt'
+    )
+
     continue_pipeline = EmptyOperator(
         task_id='continue_pipeline'
     )
@@ -490,6 +496,11 @@ with DAG(
         task_id='dbt_test_gold',
         bash_command='cd /opt/airflow/dbt && dbt test --select mart --profiles-dir /opt/airflow/dbt',
         trigger_rule='none_failed_min_one_success'
+    )
+
+    dbt_test_mart_views = BashOperator(
+    task_id='dbt_test_mart_views',
+    bash_command='cd /opt/airflow/dbt && dbt test --select models/mart/view --profiles-dir /opt/airflow/dbt'
     )
 
     gold_quality_gate = PythonOperator(
@@ -528,7 +539,7 @@ with DAG(
 
     continue_pipeline >> dbt_test_gold
 
-    dbt_test_gold >> gold_quality_gate
+    dbt_test_gold >> dbt_run_mart_views >> dbt_test_mart_views >> gold_quality_gate
 
     gold_quality_gate >> generate_metrics
 
