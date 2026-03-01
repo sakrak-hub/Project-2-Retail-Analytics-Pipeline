@@ -2,6 +2,7 @@ import json
 import argparse
 from pathlib import Path
 from datetime import datetime, timezone
+import sys
 
 import duckdb
 
@@ -32,7 +33,9 @@ results  = data.get("results", [])
 test_results = [r for r in results if r.get("unique_id", "").startswith("test.")]
 print(f"Found {len(test_results)} dbt test results (out of {len(results)} total).")
 
-
+if len(test_results)==0:
+    print("No results to process")
+    sys.exit()
 
 def get_timing(timing_list: list, phase: str, field: str):
     """Extract a timing field (started_at / completed_at) for a given phase."""

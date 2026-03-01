@@ -150,7 +150,7 @@ def check_silver_quality_gate(**context):
             refund_pct,
             total_line_item_revenue,
             quality_alert_flag
-        FROM retail_transactions_data.staging_transactions_profile;
+        FROM retail_transactions_data_quality_db.staging_transactions_profile;
         """
         
         result = conn.execute(query).fetchone()

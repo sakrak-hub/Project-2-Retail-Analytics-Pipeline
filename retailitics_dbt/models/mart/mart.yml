@@ -1,9 +1,6 @@
 version: 2
 
 models:
-  
-  
-  
   - name: dim_customers
     description: >
       Customer dimension with Type 2 Slowly Changing Dimension tracking.
@@ -632,7 +629,7 @@ models:
                 config:
                   severity: warn
 
-  - name: mart_daily_sales
+  - name: daily_sales
     description: >
       Daily sales performance summary with comprehensive metrics.
       Pre-aggregated from fact_sales for fast querying.
@@ -672,7 +669,7 @@ models:
               min_value: -100
               max_value: 100
 
-  - name: mart_customer_segments
+  - name: customer_segments
     description: >
       Customer segmentation analysis by segment, LTV, tenure, demographics.
       Pre-aggregated customer behavior metrics.
@@ -712,7 +709,7 @@ models:
               min_value: 0
               max_value: 100
 
-  - name: mart_product_performance
+  - name: product_performance
     description: >
       Product performance analytics with profitability, rankings, and ABC classification.
       One row per product (current version only).
@@ -749,7 +746,7 @@ models:
           - accepted_values:
               values: ['A - Top Performers', 'B - Steady Performers', 'C - Low Performers']
 
-  - name: mart_store_performance
+  - name: store_performance
     description: >
       Store operations and performance analytics.
       Includes regional rankings, health scores, and operational KPIs.
@@ -789,7 +786,7 @@ models:
                 - 'Below Average (20-40%)'
                 - 'Bottom Tier (Bottom 20%)'
 
-  - name: mart_cohort_analysis
+  - name: cohort_analysis
     description: >
       Customer retention and cohort behavior analysis.
       Tracks customer lifetime value and retention rates over time.
@@ -828,7 +825,7 @@ models:
         tests:
           - not_null
 
-  - name: mart_executive_summary
+  - name: executive_summary
     description: >
       Executive KPI dashboard with period-over-period comparisons.
       Includes YoY, MoM, WoW changes and cumulative metrics.
