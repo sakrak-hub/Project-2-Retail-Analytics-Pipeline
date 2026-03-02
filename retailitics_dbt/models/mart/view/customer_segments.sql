@@ -22,7 +22,7 @@ WITH customer_sales AS (
         
         COUNT(DISTINCT f.sales_key) as total_orders,
         COUNT(DISTINCT f.transaction_id) as total_transactions,
-        COUNT(DISTINCT DATE(f.transaction_date)) as active_days,
+        COUNT(DISTINCT f.transaction_date::DATE) as active_days,
         SUM(f.line_total) as total_revenue,
         SUM(f.line_profit) as total_profit,
         SUM(f.quantity) as total_units_purchased,

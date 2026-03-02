@@ -26,6 +26,6 @@ category,
 quantity,              
 unit_price,            
 discount_percent,      
-line_total  
+line_total
 from
 read_parquet('s3://my-retail-2026-analytics-5805/retail_data/transactions/*.parquet')

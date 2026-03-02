@@ -702,7 +702,7 @@ with DAG(
 
     dbt_test_gold = BashOperator( 
         task_id='dbt_test_gold',
-        bash_command='cd /opt/airflow/dbt && dbt test --select mart --profiles-dir /opt/airflow/dbt',
+        bash_command='cd /opt/airflow/dbt && dbt test --select models/mart/dim --profiles-dir /opt/airflow/dbt && dbt test --select models/mart/fact --profiles-dir /opt/airflow/dbt',
         trigger_rule='none_failed_min_one_success'
     )
 

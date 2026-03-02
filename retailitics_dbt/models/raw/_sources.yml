@@ -17,12 +17,6 @@ sources:
         identifier: raw_transactions
         description: Raw transaction records
 
-        # tests:
-        #   - dbt_utils.unique_combination_of_columns:
-        #       combination_of_columns:
-        #         - transaction_id
-        #         - product_id
-
         columns:
           - name: transaction_id
             tests:
@@ -77,15 +71,15 @@ sources:
               - not_null:
                   severity: warn
               - dbt_utils.accepted_range:
-                  min_value: -1000000
-                  max_value: 1000000
+                  min_value: -1000000.0
+                  max_value: 1000000.0
                   severity: warn           
           - name: tax_amount
             tests:
               - not_null:
                   severity: warn  
               - dbt_utils.accepted_range:
-                  min_value: 0
+                  min_value: 0.0
                   inclusive: true
                   severity: warn          
           - name: total_amount
@@ -93,8 +87,8 @@ sources:
               - not_null:
                   severity: warn 
               - dbt_utils.accepted_range:
-                  min_value: -1000000
-                  max_value: 1000000
+                  min_value: -1000000.0
+                  max_value: 1000000.0
                   severity: warn       
           - name: items_count
             tests:
@@ -149,16 +143,16 @@ sources:
               - not_null:
                   severity: warn
               - dbt_utils.accepted_range:
-                  min_value: 0
-                  max_value: 100000
+                  min_value: 0.0
+                  max_value: 100000.0
                   severity: warn           
           - name: discount_percent
             tests:
               - not_null:
                   severity: warn 
               - dbt_utils.accepted_range:
-                  min_value: 0
-                  max_value: 100
+                  min_value: 0.0
+                  max_value: 100.0
                   inclusive: true
                   severity: warn     
           - name: line_total
@@ -166,8 +160,8 @@ sources:
               - not_null:
                   severity: warn
               - dbt_utils.accepted_range:
-                  min_value: -100000
-                  max_value: 100000
+                  min_value: -100000.0
+                  max_value: 100000.0
                   severity: warn
 
       - name: customers
@@ -297,14 +291,14 @@ sources:
               - not_null:
                   severity: warn 
               - dbt_utils.accepted_range:
-                  min_value: 0
+                  min_value: 0.0
                   severity: warn          
           - name: cost
             tests:
               - not_null:
                   severity: warn
               - dbt_utils.accepted_range:
-                  min_value: 0
+                  min_value: 0.0
                   severity: warn            
           - name: sku
             tests:
@@ -321,7 +315,7 @@ sources:
               - not_null:
                   severity: warn
               - dbt_utils.accepted_range:
-                  min_value: 0
+                  min_value: 0.0
                   severity: warn          
           - name: dimensions
             tests:

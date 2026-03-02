@@ -27,7 +27,7 @@ WITH store_sales AS (
         COUNT(DISTINCT f.sales_key) as total_orders,
         COUNT(DISTINCT f.transaction_id) as total_transactions,
         COUNT(DISTINCT f.customer_key) as unique_customers,
-        COUNT(DISTINCT DATE(f.transaction_date)) as active_days,
+        COUNT(DISTINCT f.transaction_date::DATE) as active_days,
         SUM(f.quantity) as total_units_sold,
         SUM(f.items_count) as total_items,
         

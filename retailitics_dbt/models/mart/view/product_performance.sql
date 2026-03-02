@@ -54,7 +54,7 @@ WITH product_sales AS (
         
         MIN(f.transaction_date) as first_sale_date,
         MAX(f.transaction_date) as last_sale_date,
-        COUNT(DISTINCT DATE(f.transaction_date)) as active_days,
+        COUNT(DISTINCT f.transaction_date::DATE) as active_days,
         
         
         SUM(f.quantity) / NULLIF(p.stock_quantity, 0) as stock_turnover_ratio
