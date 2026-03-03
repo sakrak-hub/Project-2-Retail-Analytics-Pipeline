@@ -160,13 +160,13 @@ def check_gold_quality_gate(**context):
                 'dim_customers' as dimension,
                 COUNT(*) as total_versions,
                 COUNT(*) FILTER (WHERE is_current = TRUE) as current_versions
-            FROM retail_transactions_data_mart_db.dim_customers
+            FROM mart_db.dim_customers
             UNION ALL
-            SELECT 'dim_products', COUNT(*), COUNT(*) FILTER (WHERE is_current = TRUE) FROM retail_transactions_data_mart_db.dim_products
+            SELECT 'dim_products', COUNT(*), COUNT(*) FILTER (WHERE is_current = TRUE) FROM mart_db.dim_products
             UNION ALL
-            SELECT 'dim_stores', COUNT(*), COUNT(*) FILTER (WHERE is_current = TRUE) FROM retail_transactions_data_mart_db.dim_stores
+            SELECT 'dim_stores', COUNT(*), COUNT(*) FILTER (WHERE is_current = TRUE) FROM mart_db.dim_stores
             UNION ALL
-            SELECT 'dim_date', COUNT(*), NULL FROM retail_transactions_data_mart_db.dim_date
+            SELECT 'dim_date', COUNT(*), NULL FROM mart_db.dim_date
         """).fetchdf()
         
         logger.info(f"Dimension counts:\n{dim_counts}")
@@ -204,7 +204,7 @@ def check_gold_quality_gate(**context):
                 SUM(line_profit) as total_profit,
                 MIN(transaction_date) as earliest_date,
                 MAX(transaction_date) as latest_date
-            FROM retail_transactions_data_mart_db.fact_sales
+            FROM mart_db.fact_sales
         """).fetchdf()
         
         logger.info(f"Fact table stats:\n{fact_stats}")
@@ -227,7 +227,7 @@ def check_gold_quality_gate(**context):
                 COUNT(*) as duplicate_current_versions
             FROM (
                 SELECT customer_id, COUNT(*) as versions
-                FROM retail_transactions_data_mart_db.dim_customers
+                FROM mart_db.dim_customers
                 WHERE is_current = TRUE
                 GROUP BY customer_id
                 HAVING COUNT(*) > 1
@@ -236,7 +236,7 @@ def check_gold_quality_gate(**context):
             SELECT 'dim_products', COUNT(*)
             FROM (
                 SELECT product_id, COUNT(*) as versions
-                FROM retail_transactions_data_mart_db.dim_products
+                FROM mart_db.dim_products
                 WHERE is_current = TRUE
                 GROUP BY product_id
                 HAVING COUNT(*) > 1
@@ -245,7 +245,7 @@ def check_gold_quality_gate(**context):
             SELECT 'dim_stores', COUNT(*)
             FROM (
                 SELECT store_id, COUNT(*) as versions
-                FROM retail_transactions_data_mart_db.dim_stores
+                FROM mart_db.dim_stores
                 WHERE is_current = TRUE
                 GROUP BY store_id
                 HAVING COUNT(*) > 1
@@ -267,7 +267,7 @@ def check_gold_quality_gate(**context):
                 COUNT(*) FILTER (WHERE customer_key = MD5('-1')) as orphan_customers,
                 COUNT(*) FILTER (WHERE product_key = MD5('-1')) as orphan_products,
                 COUNT(*) FILTER (WHERE store_key = MD5('-1')) as orphan_stores
-            FROM retail_transactions_data_mart_db.fact_sales
+            FROM mart_db.fact_sales
         """).fetchdf()
         
         logger.info(f"Orphan records:\n{orphan_check}")
@@ -305,42 +305,42 @@ def check_gold_quality_gate(**context):
                 COUNT(*) as row_count,
                 COUNT(*) FILTER (WHERE gross_revenue IS NULL) as null_revenue_count,
                 COUNT(*) FILTER (WHERE total_orders IS NULL) as null_orders_count
-            FROM retail_transactions_data_mart_db.daily_sales
+            FROM mart_db.daily_sales
             UNION ALL
             SELECT 
                 'customer_segments',
                 COUNT(*),
                 COUNT(*) FILTER (WHERE segment_revenue IS NULL),
                 COUNT(*) FILTER (WHERE customer_count IS NULL)
-            FROM retail_transactions_data_mart_db.customer_segments
+            FROM mart_db.customer_segments
             UNION ALL
             SELECT 
                 'product_performance',
                 COUNT(*),
                 COUNT(*) FILTER (WHERE total_revenue IS NULL),
                 COUNT(*) FILTER (WHERE revenue_rank IS NULL)
-            FROM retail_transactions_data_mart_db.product_performance
+            FROM mart_db.product_performance
             UNION ALL
             SELECT 
                 'store_performance',
                 COUNT(*),
                 COUNT(*) FILTER (WHERE total_revenue IS NULL),
                 COUNT(*) FILTER (WHERE store_health_score IS NULL)
-            FROM retail_transactions_data_mart_db.store_performance
+            FROM mart_db.store_performance
             UNION ALL
             SELECT 
                 'cohort_analysis',
                 COUNT(*),
                 COUNT(*) FILTER (WHERE total_revenue IS NULL),
                 COUNT(*) FILTER (WHERE retention_rate_pct IS NULL)
-            FROM retail_transactions_data_mart_db.cohort_analysis
+            FROM mart_db.cohort_analysis
             UNION ALL
             SELECT 
                 'executive_summary',
                 COUNT(*),
                 COUNT(*) FILTER (WHERE gross_revenue IS NULL),
                 COUNT(*) FILTER (WHERE ytd_revenue IS NULL)
-            FROM retail_transactions_data_mart_db.executive_summary
+            FROM mart_db.executive_summary
         """).fetchdf()
         
         logger.info(f"Mart view counts:\n{mart_counts}")
@@ -391,15 +391,15 @@ def check_gold_quality_gate(**context):
         reconciliation = conn.execute("""
             SELECT 
                 -- Fact table totals
-                (SELECT SUM(line_total) FROM retail_transactions_data_mart_db.fact_sales WHERE is_refund = FALSE) as fact_revenue,
-                (SELECT COUNT(*) FROM retail_transactions_data_mart_db.fact_sales WHERE is_refund = FALSE) as fact_orders,
+                (SELECT SUM(line_total) FROM mart_db.fact_sales WHERE is_refund = FALSE) as fact_revenue,
+                (SELECT COUNT(*) FROM mart_db.fact_sales WHERE is_refund = FALSE) as fact_orders,
                 
                 -- Mart totals
-                (SELECT SUM(gross_revenue) FROM retail_transactions_data_mart_db.daily_sales) as daily_revenue,
-                (SELECT SUM(total_orders) FROM retail_transactions_data_mart_db.daily_sales) as daily_orders,
-                (SELECT SUM(segment_revenue) FROM retail_transactions_data_mart_db.customer_segments) as segment_revenue,
-                (SELECT SUM(total_revenue) FROM retail_transactions_data_mart_db.product_performance) as product_revenue,
-                (SELECT SUM(total_revenue) FROM retail_transactions_data_mart_db.store_performance) as store_revenue
+                (SELECT SUM(gross_revenue) FROM mart_db.daily_sales) as daily_revenue,
+                (SELECT SUM(total_orders) FROM mart_db.daily_sales) as daily_orders,
+                (SELECT SUM(segment_revenue) FROM mart_db.customer_segments) as segment_revenue,
+                (SELECT SUM(total_revenue) FROM mart_db.product_performance) as product_revenue,
+                (SELECT SUM(total_revenue) FROM mart_db.store_performance) as store_revenue
         """).fetchdf()
         
         logger.info(f"Reconciliation check:\n{reconciliation}")
@@ -505,7 +505,7 @@ def generate_gold_metrics(**context):
         
         
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS retail_transactions_data_mart_db.gold_metrics_log (
+            CREATE TABLE IF NOT EXISTS mart_db.gold_metrics_log (
                 metric_id INTEGER PRIMARY KEY,
                 run_date TIMESTAMP NOT NULL,
                 dag_run_id VARCHAR,
@@ -537,12 +537,12 @@ def generate_gold_metrics(**context):
         
         dim_metrics = conn.execute("""
             SELECT 
-                (SELECT COUNT(*) FROM retail_transactions_data_mart_db.dim_customers WHERE is_current = TRUE) as customers_current,
-                (SELECT COUNT(*) FROM retail_transactions_data_mart_db.dim_customers) as customers_total,
-                (SELECT COUNT(*) FROM retail_transactions_data_mart_db.dim_products WHERE is_current = TRUE) as products_current,
-                (SELECT COUNT(*) FROM retail_transactions_data_mart_db.dim_products) as products_total,
-                (SELECT COUNT(*) FROM retail_transactions_data_mart_db.dim_stores WHERE is_current = TRUE) as stores_current,
-                (SELECT COUNT(*) FROM retail_transactions_data_mart_db.dim_stores) as stores_total
+                (SELECT COUNT(*) FROM mart_db.dim_customers WHERE is_current = TRUE) as customers_current,
+                (SELECT COUNT(*) FROM mart_db.dim_customers) as customers_total,
+                (SELECT COUNT(*) FROM mart_db.dim_products WHERE is_current = TRUE) as products_current,
+                (SELECT COUNT(*) FROM mart_db.dim_products) as products_total,
+                (SELECT COUNT(*) FROM mart_db.dim_stores WHERE is_current = TRUE) as stores_current,
+                (SELECT COUNT(*) FROM mart_db.dim_stores) as stores_total
         """).fetchone()
         
         fact_metrics = conn.execute("""
@@ -551,7 +551,7 @@ def generate_gold_metrics(**context):
                 SUM(line_total) as total_revenue,
                 SUM(line_profit) as total_profit,
                 AVG(line_profit_margin_pct) as avg_margin
-            FROM retail_transactions_data_mart_db.fact_sales
+            FROM mart_db.fact_sales
             WHERE is_refund = FALSE
         """).fetchone()
         
@@ -560,18 +560,18 @@ def generate_gold_metrics(**context):
                 COUNT(*) FILTER (WHERE customer_key = MD5('-1')) as orphan_customers,
                 COUNT(*) FILTER (WHERE product_key = MD5('-1')) as orphan_products,
                 COUNT(*) FILTER (WHERE store_key = MD5('-1')) as orphan_stores
-            FROM retail_transactions_data_mart_db.fact_sales
+            FROM mart_db.fact_sales
         """).fetchone()
 
         quality_score = ti.xcom_pull(task_ids='gold_quality_gate', key='gold_quality_score')
 
         next_id = conn.execute("""
             SELECT COALESCE(MAX(metric_id), 0) + 1 
-            FROM retail_transactions_data_mart_db.gold_metrics_log
+            FROM mart_db.gold_metrics_log
         """).fetchone()[0]
         
         conn.execute("""
-            INSERT INTO retail_transactions_data_mart_db.gold_metrics_log 
+            INSERT INTO mart_db.gold_metrics_log 
             (metric_id, run_date, dag_run_id,
              dim_customers_current, dim_customers_total,
              dim_products_current, dim_products_total,
@@ -638,8 +638,8 @@ def export_business_metrics(**context):
                 SUM(f.line_total) as revenue,
                 SUM(f.line_profit) as profit,
                 AVG(f.line_profit_margin_pct) as avg_margin_pct
-            FROM retail_transactions_data_mart_db.fact_sales f
-            JOIN retail_transactions_data_mart_db.dim_date d ON f.date_key = d.date_key
+            FROM mart_db.fact_sales f
+            JOIN mart_db.dim_date d ON f.date_key = d.date_key
             WHERE f.is_refund = FALSE
               AND d.is_last_30_days = TRUE
             GROUP BY 1, 2, 3, 4

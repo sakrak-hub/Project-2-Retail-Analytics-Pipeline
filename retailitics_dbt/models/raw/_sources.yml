@@ -4,7 +4,7 @@ sources:
   - name: retail_transactions_data
     description: Raw retail transaction data from S3
     database: warehouse
-    schema: retail_transactions_data_raw_db
+    schema: raw_db
 
     freshness:
       warn_after: {count: 24, period: hour}

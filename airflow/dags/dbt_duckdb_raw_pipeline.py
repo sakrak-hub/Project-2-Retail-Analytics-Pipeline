@@ -27,7 +27,7 @@ def check_bronze_quality_gate(**context):
             duplicate_line_item_pct,
             health_status,
             quality_tier
-        FROM retail_transactions_data_quality_db.bronze_transactions_profile
+        FROM quality_db.bronze_transactions_profile
         """
         
         result = conn.execute(query).fetchone()
