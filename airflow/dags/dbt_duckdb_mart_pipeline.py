@@ -305,42 +305,42 @@ def check_gold_quality_gate(**context):
                 COUNT(*) as row_count,
                 COUNT(*) FILTER (WHERE gross_revenue IS NULL) as null_revenue_count,
                 COUNT(*) FILTER (WHERE total_orders IS NULL) as null_orders_count
-            FROM mart_db.daily_sales
+            FROM aggregated_db.daily_sales
             UNION ALL
             SELECT 
                 'customer_segments',
                 COUNT(*),
                 COUNT(*) FILTER (WHERE segment_revenue IS NULL),
                 COUNT(*) FILTER (WHERE customer_count IS NULL)
-            FROM mart_db.customer_segments
+            FROM aggregated_db.customer_segments
             UNION ALL
             SELECT 
                 'product_performance',
                 COUNT(*),
                 COUNT(*) FILTER (WHERE total_revenue IS NULL),
                 COUNT(*) FILTER (WHERE revenue_rank IS NULL)
-            FROM mart_db.product_performance
+            FROM aggregated_db.product_performance
             UNION ALL
             SELECT 
                 'store_performance',
                 COUNT(*),
                 COUNT(*) FILTER (WHERE total_revenue IS NULL),
                 COUNT(*) FILTER (WHERE store_health_score IS NULL)
-            FROM mart_db.store_performance
+            FROM aggregated_db.store_performance
             UNION ALL
             SELECT 
                 'cohort_analysis',
                 COUNT(*),
                 COUNT(*) FILTER (WHERE total_revenue IS NULL),
                 COUNT(*) FILTER (WHERE retention_rate_pct IS NULL)
-            FROM mart_db.cohort_analysis
+            FROM aggregated_db.cohort_analysis
             UNION ALL
             SELECT 
                 'executive_summary',
                 COUNT(*),
                 COUNT(*) FILTER (WHERE gross_revenue IS NULL),
                 COUNT(*) FILTER (WHERE ytd_revenue IS NULL)
-            FROM mart_db.executive_summary
+            FROM aggregated_db.executive_summary
         """).fetchdf()
         
         logger.info(f"Mart view counts:\n{mart_counts}")
@@ -395,11 +395,11 @@ def check_gold_quality_gate(**context):
                 (SELECT COUNT(*) FROM mart_db.fact_sales WHERE is_refund = FALSE) as fact_orders,
                 
                 -- Mart totals
-                (SELECT SUM(gross_revenue) FROM mart_db.daily_sales) as daily_revenue,
-                (SELECT SUM(total_orders) FROM mart_db.daily_sales) as daily_orders,
-                (SELECT SUM(segment_revenue) FROM mart_db.customer_segments) as segment_revenue,
-                (SELECT SUM(total_revenue) FROM mart_db.product_performance) as product_revenue,
-                (SELECT SUM(total_revenue) FROM mart_db.store_performance) as store_revenue
+                (SELECT SUM(gross_revenue) FROM aggregated_db.daily_sales) as daily_revenue,
+                (SELECT SUM(total_orders) FROM aggregated_db.daily_sales) as daily_orders,
+                (SELECT SUM(segment_revenue) FROM aggregated_db.customer_segments) as segment_revenue,
+                (SELECT SUM(total_revenue) FROM aggregated_db.product_performance) as product_revenue,
+                (SELECT SUM(total_revenue) FROM aggregated_db.store_performance) as store_revenue
         """).fetchdf()
         
         logger.info(f"Reconciliation check:\n{reconciliation}")
@@ -505,7 +505,7 @@ def generate_gold_metrics(**context):
         
         
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS mart_db.gold_metrics_log (
+            CREATE TABLE IF NOT EXISTS aggregated_db.gold_metrics_log (
                 metric_id INTEGER PRIMARY KEY,
                 run_date TIMESTAMP NOT NULL,
                 dag_run_id VARCHAR,
@@ -567,11 +567,11 @@ def generate_gold_metrics(**context):
 
         next_id = conn.execute("""
             SELECT COALESCE(MAX(metric_id), 0) + 1 
-            FROM mart_db.gold_metrics_log
+            FROM aggregated_db.gold_metrics_log
         """).fetchone()[0]
         
         conn.execute("""
-            INSERT INTO mart_db.gold_metrics_log 
+            INSERT INTO aggregated_db.gold_metrics_log 
             (metric_id, run_date, dag_run_id,
              dim_customers_current, dim_customers_total,
              dim_products_current, dim_products_total,
