@@ -21,13 +21,13 @@ WITH line_items_with_duplicate_flag AS (
     FROM {{ ref('bronze_transactions') }}
     
     {% if is_incremental() %}
-    WHERE DATE_TRUNC('day', _loaded_at) > (SELECT MAX(profile_date) FROM {{ this }})
+    WHERE DATE_TRUNC('day', bronze_processed_at) > (SELECT MAX(profile_date) FROM {{ this }})
     {% endif %}
 ),
 
 transactions_daily AS (
     SELECT 
-        DATE_TRUNC('day', _loaded_at) AS profile_date,
+        DATE_TRUNC('day', bronze_processed_at) AS profile_date,
         MAX(transaction_date) AS date_to_process,
         COUNT(*) AS total_line_items,
         COUNT(DISTINCT CONCAT(transaction_id_clean, '|', product_id)) AS unique_txn_product_combinations,
@@ -92,7 +92,7 @@ transactions_daily AS (
     
     FROM line_items_with_duplicate_flag
     
-    GROUP BY DATE_TRUNC('day', _loaded_at), transaction_date
+    GROUP BY DATE_TRUNC('day',bronze_processed_at), transaction_date
 ),
 
 profile_enriched AS (

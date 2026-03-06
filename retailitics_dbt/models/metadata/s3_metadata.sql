@@ -6,11 +6,9 @@
     )
 }}
 
-SELECT
-strftime(stats_max::DATE, '%Y%m%d') as date_key,
-file_name,
-row_group_num_rows,
-path_in_schema,
-stats_max::DATE as transaction_date_in_s3
-FROM parquet_metadata('s3://my-retail-2026-analytics-5805/retail_data/transactions/*.parquet')
-WHERE path_in_schema = 'date';
+SELECT 
+replace(regexp_extract(filename, '\d{4}-\d{2}-\d{2}'), '-', '') AS date_key,
+regexp_extract(filename, '\d{4}-\d{2}-\d{2}')::DATE AS transaction_date,
+size,
+last_modified::DATE as modified_date
+FROM read_blob('s3://my-retail-2026-analytics-5805/retail_data/transactions/*.parquet')

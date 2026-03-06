@@ -20,7 +20,7 @@ WITH revenue_summed AS(
 
 staging_daily AS (
     SELECT 
-        DATE_TRUNC('day', staging_loaded_at) AS profile_date,
+        DATE_TRUNC('day', staging_processed_at) AS profile_date,
         
         COUNT(*) AS total_line_items,
         COUNT(DISTINCT line_item_key) AS unique_line_items,
@@ -84,10 +84,10 @@ staging_daily AS (
     FROM revenue_summed
     
     {% if is_incremental() %}
-    WHERE DATE_TRUNC('day', staging_loaded_at) > (SELECT MAX(profile_date) FROM {{ this }})
+    WHERE DATE_TRUNC('day', staging_processed_at) > (SELECT MAX(profile_date) FROM {{ this }})
     {% endif %}
     
-    GROUP BY DATE_TRUNC('day', staging_loaded_at)
+    GROUP BY DATE_TRUNC('day', staging_processed_at)
 ),
 
 profile_enriched AS (

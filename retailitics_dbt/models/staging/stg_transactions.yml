@@ -284,12 +284,17 @@ models:
               config:
                 severity: warn
       
-      - name: bronze_loaded_at
+      - name: raw_loaded_at
+        description: When raw record was loaded s3
+        tests:
+          - not_null
+
+      - name: bronze_processed_at
         description: When this record was loaded to bronze (from source)
         tests:
           - not_null
       
-      - name: staging_loaded_at
+      - name: staging_processed_at
         description: When this record was loaded to staging
         tests:
           - not_null

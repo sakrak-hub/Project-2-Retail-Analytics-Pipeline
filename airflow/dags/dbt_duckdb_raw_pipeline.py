@@ -255,7 +255,10 @@ with DAG(
 
     start = EmptyOperator(task_id='pipeline_start')
 
-    raw_layer_start = EmptyOperator(task_id='raw_layer_start')
+    raw_layer_start = BashOperator(
+        task_id='raw_layer_start',
+        bash_command='cd /opt/airflow/dbt && dbt run --select models/metadata --profiles-dir /opt/airflow/dbt'
+        )
 
     dbt_seed = BashOperator(
         task_id='dbt_seed',

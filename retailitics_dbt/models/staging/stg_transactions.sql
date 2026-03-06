@@ -8,8 +8,8 @@
 }}
 
 WITH max_loaded AS (
-    SELECT COALESCE(MAX(_loaded_at), '2026-01-01'::TIMESTAMP) AS max_load
-        FROM {{ ref('bronze_transactions') }}
+    SELECT COALESCE(MAX(staging_processed_at), '2026-01-01'::TIMESTAMP) AS max_load
+        FROM {{ this }} 
 ),
 
 bronze_source AS (
@@ -17,7 +17,7 @@ bronze_source AS (
     FROM {{ ref('bronze_transactions') }}
     
     {% if is_incremental() %}
-    WHERE _loaded_at > (
+    WHERE raw_loaded_at > (
         SELECT max_load
         FROM max_loaded
     )
@@ -30,7 +30,7 @@ deduplicated AS (
         ROW_NUMBER() OVER (
             PARTITION BY transaction_id_clean, product_id 
             ORDER BY 
-                _loaded_at DESC,
+                bronze_processed_at DESC,
                 CASE WHEN is_refund THEN 0 ELSE 1 END DESC
         ) AS row_num
     FROM bronze_source
@@ -54,7 +54,7 @@ staging_final AS (
         {{ dbt_utils.generate_surrogate_key([
             'transaction_id_clean', 
             'product_id', 
-            '_loaded_at'
+            'bronze_processed_at'
         ]) }} AS line_item_key,
         
         transaction_id_clean AS transaction_id,
@@ -185,8 +185,9 @@ staging_final AS (
         missing_cashier_id_flag AS had_missing_cashier,
         high_unit_price_flag AS had_high_unit_price,
 
-        _loaded_at AS bronze_loaded_at,
-        CURRENT_TIMESTAMP AS staging_loaded_at,
+        raw_loaded_at, 
+        bronze_processed_at,
+        CURRENT_TIMESTAMP AS staging_processed_at,
         _batch_id AS bronze_batch_id,
         '{{ invocation_id }}' AS staging_batch_id,
         _source_system

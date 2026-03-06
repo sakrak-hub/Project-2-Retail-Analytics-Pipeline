@@ -61,7 +61,7 @@ def reconcile_gold_schema(**context):
 
     logger.info("🔧 Running schema reconciliation (full_refresh)")
     
-    cmd = "cd /opt/airflow/dbt && dbt run --select mart --full-refresh --profiles-dir /opt/airflow/dbt"
+    cmd = "cd /opt/airflow/dbt && dbt run --select models/mart/dim --full-refresh --profiles-dir /opt/airflow/dbt && dbt run --select models/mart/fact --full-refresh --profiles-dir /opt/airflow/dbt"
     
     result = subprocess.run(
         cmd,

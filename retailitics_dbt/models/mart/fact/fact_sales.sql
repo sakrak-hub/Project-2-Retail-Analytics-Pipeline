@@ -96,8 +96,9 @@ sales_with_dimension AS (
         txn.had_missing_cashier,
         txn.had_high_unit_price,
 
-        txn.bronze_loaded_at,
-        txn.staging_loaded_at AS fact_loaded_at,
+        txn.raw_loaded_at AS date_of_creation,
+        txn.bronze_processed_at,
+        txn.staging_processed_at AS fact_loaded_at,
         txn._source_system,
         CURRENT_TIMESTAMP AS created_at
     
