@@ -9,8 +9,35 @@ import logging
 import duckdb
 import subprocess
 import pandas as pd
+import os
 
 logger = logging.getLogger(__name__)
+
+def dag_failure_callback(context):
+
+    task_instance = context['task_instance']
+    exception = context.get('exception')
+
+    logger.info(f"⚠️  Task {task_instance.task_id} failed: {exception}")
+
+    if 'Could not set lock on file' in str(exception):
+
+        SOURCE_DB = "/opt/airflow/dbt/warehouse.duckdb"
+
+        while True:
+            try:
+                target_conn = duckdb.connect(SOURCE_DB)
+                print(target_conn.sql("SHOW TABLES").fetchall())
+                print("DB unlocked!")
+                target_conn.close()
+                break
+            except duckdb.IOException as e:
+                pass
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
+                break
+    else:
+        print(f"Retry {str(task_instance)}!")
 
 def run_gold_with_schema_detection(**context):
 
@@ -655,12 +682,60 @@ def export_business_metrics(**context):
     finally:
         conn.close()
 
+def sync_bi_database(**context):
+    
+    SOURCE_DB = "/opt/airflow/dbt/warehouse.duckdb"
+    TARGET_DB = "/opt/airflow/dbt/warehouse_bi.duckdb"
+    
+    logger.info("🔄 Syncing to BI database...")
+    
+    try:
+        if os.path.exists(TARGET_DB):
+            os.remove(TARGET_DB)
+        
+        target_conn = duckdb.connect(TARGET_DB)
+
+        target_conn.execute(f"ATTACH '{SOURCE_DB}' AS source_db (READ_ONLY)")
+        target_conn.execute("""
+        CREATE SCHEMA IF NOT EXISTS mart_db;
+        CREATE SCHEMA IF NOT EXISTS aggregated_db;
+        """)
+        
+        tables = [
+            'mart_db.dim_customers', 'mart_db.dim_products', 'mart_db.dim_stores', 'mart_db.dim_date',
+            'mart_db.fact_sales',
+            'aggregated_db.daily_sales', 'aggregated_db.customer_segments', 
+            'aggregated_db.product_performance', 'aggregated_db.store_performance',
+            'aggregated_db.cohort_analysis', 'aggregated_db.executive_summary'
+        ]
+
+        for table in tables:
+            logger.info(f"   Syncing {table}...")
+            target_conn.execute(f"CREATE TABLE {table} AS SELECT * FROM source_db.{table}")
+        
+        target_conn.execute("""
+            CREATE TABLE _sync_metadata AS
+            SELECT 
+                CURRENT_TIMESTAMP as last_sync_time,
+                'success' as status
+        """)
+        
+        target_conn.execute(f"DETACH source_db")
+        target_conn.close()
+        
+        logger.info("✅ BI database synced successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ BI sync failed: {e}")
+        raise
+        
 with DAG(
     'retail_analytics_dbt_duckdb_mart',
     default_args={
         'owner': 'Sakkaravarthi',
         'depends_on_past': False,
         'email': ['sakra_k@outlook.com'],
+        'on_failure_callback': dag_failure_callback,
         'email_on_failure': True,
         'email_on_retry': False,
         'retries': 2,
@@ -733,6 +808,11 @@ with DAG(
         trigger_rule='all_success'
     )
 
+    create_sync_bi_data= PythonOperator(
+        task_id='create_sync_bi_data',
+        python_callable=sync_bi_database
+    )
+
     gold_layer_complete = EmptyOperator(
         task_id='gold_layer_complete',
         trigger_rule='all_success'
@@ -751,6 +831,6 @@ with DAG(
 
     gold_quality_gate >> generate_metrics
 
-    generate_metrics >> [export_metrics, generate_docs]
+    generate_metrics >> [export_metrics, generate_docs] >> create_sync_bi_data
 
-    [export_metrics, generate_docs] >> gold_layer_complete
+    create_sync_bi_data >> gold_layer_complete

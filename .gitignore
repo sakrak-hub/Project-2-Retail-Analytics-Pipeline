@@ -16,4 +16,4 @@ retailitics_dbt/*.txt
 retailitics_dbt/*.duckdb
 retailitics_dbt/target/
 retailitics_dbt/logs/
-warehouse.duckdb
+*.duckdb

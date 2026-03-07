@@ -11,6 +11,32 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
+def dag_failure_callback(**context):
+
+    task_instance = context['task_instance']
+    exception = context.get('exception')
+
+    logger.info(f"⚠️  Task {task_instance.task_id} failed: {exception}")
+
+    if 'Could not set lock on file' in str(exception):
+
+        SOURCE_DB = "/opt/airflow/dbt/warehouse.duckdb"
+
+        while True:
+            try:
+                target_conn = duckdb.connect(SOURCE_DB)
+                print(target_conn.sql("SHOW TABLES").fetchall())
+                print("DB unlocked!")
+                target_conn.close()
+                break
+            except duckdb.IOException as e:
+                pass
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
+                break
+    else:
+        print(f"Retry {str(task_instance)}!")
+
 def run_silver_with_schema_detection(**context):
 
     ti = context['ti']
@@ -289,20 +315,13 @@ with DAG(
         'retry_delay': timedelta(minutes=5),
     },
     description='Processing raw data for data warehouse and presentation',
+    on_failure_callback=dag_failure_callback,
     schedule=None, 
     start_date=datetime(2026, 1, 1),
     catchup=False,
     max_active_runs=1,
     tags=['retail', 'dbt', 'quality-gates', 'incremental', 'silver']
 ) as dag:
-
-    # receive_bronze_success_signal = ExternalTaskSensor(
-    #     task_id='receive_bronze_success_signal',
-    #     external_dag_id='retail_analytics_dbt_duckdb_pipeline',
-    #     external_task_id='pipeline_complete',
-    #     mode='reschedule',
-    #     poke_interval=60,
-    # )
 
     silver_layer_start = EmptyOperator(task_id='silver_layer_start')
 
