@@ -24,18 +24,18 @@ def dag_failure_callback(context):
 
         SOURCE_DB = "/opt/airflow/dbt/warehouse.duckdb"
 
-        while True:
+        for attempt in range(1, 31):
             try:
-                target_conn = duckdb.connect(SOURCE_DB)
-                print(target_conn.sql("SHOW TABLES").fetchall())
-                print("DB unlocked!")
-                target_conn.close()
-                break
-            except duckdb.IOException as e:
-                pass
-            except Exception as e:
-                print(f"An unexpected error occurred: {e}")
-                break
+                conn = duckdb.connect(SOURCE_DB, read_only=True)
+                logger.info(f"✅ Unlocked after {attempt} attempts!")
+                conn.close()
+                return
+            except duckdb.IOException:
+                if attempt < 30:
+                    time.sleep(10)
+                else:
+                    logger.error("❌ Timeout")
+                    return
     else:
         print(f"Retry {str(task_instance)}!")
 

@@ -11,7 +11,7 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
-def dag_failure_callback(**context):
+def dag_failure_callback(context):
 
     task_instance = context['task_instance']
     exception = context.get('exception')
@@ -22,18 +22,18 @@ def dag_failure_callback(**context):
 
         SOURCE_DB = "/opt/airflow/dbt/warehouse.duckdb"
 
-        while True:
+        for attempt in range(1, 31):
             try:
-                target_conn = duckdb.connect(SOURCE_DB)
-                print(target_conn.sql("SHOW TABLES").fetchall())
-                print("DB unlocked!")
-                target_conn.close()
-                break
-            except duckdb.IOException as e:
-                pass
-            except Exception as e:
-                print(f"An unexpected error occurred: {e}")
-                break
+                conn = duckdb.connect(SOURCE_DB, read_only=True)
+                logger.info(f"✅ Unlocked after {attempt} attempts!")
+                conn.close()
+                return
+            except duckdb.IOException:
+                if attempt < 30:
+                    time.sleep(10)
+                else:
+                    logger.error("❌ Timeout")
+                    return
     else:
         print(f"Retry {str(task_instance)}!")
 
@@ -309,13 +309,13 @@ with DAG(
         'owner': 'Sakkaravarthi',
         'depends_on_past': False,
         'email': ['sakra_k@outlook.com'],
+        'on_failure_callback': dag_failure_callback,
         'email_on_failure': True,
         'email_on_retry': False,
         'retries': 2,
         'retry_delay': timedelta(minutes=5),
     },
     description='Processing raw data for data warehouse and presentation',
-    on_failure_callback=dag_failure_callback,
     schedule=None, 
     start_date=datetime(2026, 1, 1),
     catchup=False,
