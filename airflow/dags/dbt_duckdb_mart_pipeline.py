@@ -720,15 +720,44 @@ def sync_bi_database(**context):
                 'success' as status
         """)
         
-        target_conn.execute(f"DETACH source_db")
-        target_conn.close()
+        target_conn.execute("DETACH source_db")
         
         logger.info("✅ BI database synced successfully")
         
     except Exception as e:
         logger.error(f"❌ BI sync failed: {e}")
         raise
-        
+    
+    finally:
+        target_conn.close()
+
+def update_motherduck_db(**context):
+
+    source_db_path = '/opt/airflow/dbt/warehouse_bi.duckdb'
+
+    try:
+        md_con = duckdb.connect('md:')
+
+        query = """
+        DETACH DATABASE IF EXISTS warehouse_bi;
+        DROP DATABASE IF EXISTS warehouse_bi;
+        CREATE OR REPLACE DATABASE warehouse_bi 
+        FROM '/mnt/d/Projects/Project-2-Retail-Analytics-Pipeline/retailitics_dbt/warehouse_bi.duckdb';
+        """
+        md_con.execute(query)
+
+        df = md_con.execute("SELECT * FROM duckdb_tables() WHERE database_name='warehouse_bi';").fetchdf()
+
+        if len(df)==0:
+            raise ValueError('Database not created. Please check source!')
+    
+    except Exception as e:
+        logger.error(f"Visualisation DB Update failed!: {e}")
+        raise
+
+    finally: 
+        md_con.close()
+
 with DAG(
     'retail_analytics_dbt_duckdb_mart',
     default_args={

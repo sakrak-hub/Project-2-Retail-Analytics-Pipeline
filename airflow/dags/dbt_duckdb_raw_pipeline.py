@@ -11,6 +11,32 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
+def dag_failure_callback(context):
+
+    task_instance = context['task_instance']
+    exception = context.get('exception')
+
+    logger.info(f"⚠️  Task {task_instance.task_id} failed: {exception}")
+
+    if 'Could not set lock on file' in str(exception):
+
+        SOURCE_DB = "/opt/airflow/dbt/warehouse.duckdb"
+
+        for attempt in range(1, 31):
+            try:
+                conn = duckdb.connect(SOURCE_DB, read_only=True)
+                logger.info(f"✅ Unlocked after {attempt} attempts!")
+                conn.close()
+                return
+            except duckdb.IOException:
+                if attempt < 30:
+                    time.sleep(10)
+                else:
+                    logger.error("❌ Timeout")
+                    return
+    else:
+        print(f"Retry {str(task_instance)}!")
+
 def check_bronze_quality_gate(**context):
     
     ti = context['ti']
@@ -242,6 +268,7 @@ with DAG(
         'email': ['sakra_k@outlook.com'],
         'email_on_failure': True,
         'email_on_retry': False,
+        'on_failure_callback': dag_failure_callback,
         'retries': 2,
         'retry_delay': timedelta(minutes=5),
     },
