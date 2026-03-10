@@ -115,23 +115,6 @@ class RetailDataGenerator:
         
         return random.choice(issues)(text)
     
-    # def _introduce_data_type_inconsistency(self, value, target_type='string'):
-    #     """Convert values to inconsistent data types."""
-    #     if not self.add_noise or random.random() > self.noise_config['data_type_inconsistency']:
-    #         return value
-        
-    #     if target_type == 'string' and isinstance(value, (int, float)):
-    #         return str(value)
-    #     elif target_type == 'number' and isinstance(value, str):
-    #         try:
-    #             return float(value) if '.' in value else int(value)
-    #         except:
-    #             return value
-    #     elif isinstance(value, bool):
-    #         return random.choice(['true', 'false', '1', '0', 'True', 'False'])
-        
-    #     return value
-    
     def _introduce_timestamp_issues(self, base_datetime):
         """Introduce various timestamp-related issues."""
         if not self.add_noise:
