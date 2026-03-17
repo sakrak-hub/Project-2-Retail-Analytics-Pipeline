@@ -51,7 +51,6 @@ class S3ToKafkaStreamer:
             
             print(f"✅ Found {len(files)} parquet files")
             
-            # Show file list
             total_size = sum(f['size'] for f in files)
             print(f"   Total size: {total_size / (1024**2):.2f} MB")
             
@@ -66,12 +65,10 @@ class S3ToKafkaStreamer:
         print(f"\n📖 Reading s3://{bucket}/{key}")
         
         try:
-            # Download parquet file to memory
             buffer = BytesIO()
             self.s3_client.download_fileobj(bucket, key, buffer)
             buffer.seek(0)
             
-            # Read with pandas
             df = pd.read_parquet(buffer)
             
             print(f"   ✅ Loaded {len(df):,} records")
@@ -87,15 +84,13 @@ class S3ToKafkaStreamer:
         """Convert DataFrame row to Kafka event"""
         event = row.to_dict()
         
-        # Add streaming metadata
         event['_streaming_metadata'] = {
             'source': 'S3',
             'streamed_at': datetime.now().isoformat(),
             'record_number': record_num,
             'total_records': total_records
         }
-        
-        # Convert pandas types to JSON-serializable types
+
         for key, value in event.items():
             if pd.isna(value):
                 event[key] = None
@@ -119,14 +114,12 @@ class S3ToKafkaStreamer:
         start_time = time.time()
         
         for idx, row in df.iterrows():
-            # Prepare event
+
             event = self.prepare_event(row, idx + 1, total_records)
             
-            # Send to Kafka
             try:
                 future = self.producer.send(topic, value=event)
-                
-                # Don't wait for every message (performance optimization)
+
                 if (idx + 1) % batch_size == 0:
                     future.get(timeout=10)  # Wait for batch
                     self.producer.flush()
@@ -137,7 +130,6 @@ class S3ToKafkaStreamer:
                 print(f"\n❌ Error sending record {idx + 1}: {e}")
                 continue
             
-            # Progress indicator
             if (idx + 1) % batch_size == 0 or (idx + 1) == total_records:
                 elapsed = time.time() - start_time
                 rate = sent_count / elapsed if elapsed > 0 else 0
@@ -146,11 +138,9 @@ class S3ToKafkaStreamer:
                 print(f"   📊 Sent {idx + 1:,} / {total_records:,} records "
                       f"({progress:.1f}%) | Rate: {rate:.1f} events/sec")
             
-            # Simulate real-time with delay
             if delay_seconds > 0:
                 time.sleep(delay_seconds)
         
-        # Final flush
         self.producer.flush()
         
         elapsed = time.time() - start_time
@@ -169,7 +159,6 @@ class S3ToKafkaStreamer:
             print("❌ No parquet files found!")
             return
         
-        # Limit files if requested
         if max_files:
             files = files[:max_files]
             print(f"⚠️  Limited to first {max_files} files")
@@ -189,10 +178,8 @@ class S3ToKafkaStreamer:
             print(f"\n📁 File {file_idx}/{len(files)}: {file_key}")
             print(f"   Size: {file_info['size'] / 1024:.2f} KB")
             
-            # Read parquet file
             df = self.read_parquet_from_s3(bucket, file_key)
             
-            # Stream to Kafka
             self.stream_dataframe(df, topic, delay_seconds)
             
             total_streamed += len(df)
