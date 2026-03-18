@@ -1,3 +1,9 @@
+{{
+    config(
+        materialized='view'
+    )
+}}
+
 SELECT 
 r.transaction_id,
 m.modified_date AS _loaded_at_date,
