@@ -1,54 +1,53 @@
+from data_generator_2 import RetailDataGenerator
+from kafka import KafkaProducer
 import boto3
 import pandas as pd
-from kafka import KafkaProducer
 import json
+from datetime import datetime, timedelta
 import time
-from datetime import datetime,date
-from io import BytesIO
-import argparse
-import sys
 import logging
+from io import BytesIO
 
 stream_server = [
     'localhost:9092'
     ]
 
-def setup(stream_server):
+s3_client = boto3.client('s3')
 
-    s3_client = boto3.client('s3')
-
-    producer = KafkaProducer(
-        bootstrap_servers = stream_server,
-        value_serializer = lambda v: json.dumps(v, default=str).encode('utf-8'),
-        acks = 'all',
-        retries=3,
-        compression_type = 'gzip'
+producer = KafkaProducer(
+    bootstrap_servers = stream_server,
+    value_serializer = lambda v: json.dumps(v, default=str).encode('utf-8'),
+    acks = 'all',
+    retries=3,
+    compression_type = 'gzip'
     )
 
-    return s3_client, producer
+s3_buffer = []
+stats = {
+            'total': 0,
+            'kafka_today': 0,
+            's3_historical': 0,
+            's3_null_timestamp': 0,
+            's3_future': 0,
+            's3_files_written': 0,
+            'kafka_failed': 0
+        }    
 
-def get_latest_file_from_s3(s3_client,bucket):
+def flatten_transactions(transactions):
 
-    buffer = BytesIO()
-    today_date = date.today()
-    object_key = f'retail_data/transactions/transactions_{str(today_date)}.parquet'
-    transaction_file = s3_client.download_fileobj(
-        bucket,
-        object_key,
-        buffer
-    )
-    buffer.seek(0)
-
-    df = pd.read_parquet(buffer)
-    return df
+   base_txn = {k:v for k,v in transactions.items() if k !='items'}
+   return base_txn
 
 if __name__=='__main__':
 
-    s3_client, producer = setup(stream_server)
+    transaction_date = datetime(2026,3,21)
 
-    df = get_latest_file_from_s3(s3_client, 'my-retail-2026-analytics-5805')
+    retail_generator = RetailDataGenerator(folder_path='/mnt/d/Projects/Project-2-Retail-Analytics-Pipeline/tmp/master_data')
 
-    for idx, row in df.iterrows():
-        print(row)
-    
-    
+    data = retail_generator.generate_daily_transactions(transaction_date)
+
+    b = flatten_transactions(data)
+
+    for item in b:
+        for k,v in item.items():
+            print(f'{k}:{v}')

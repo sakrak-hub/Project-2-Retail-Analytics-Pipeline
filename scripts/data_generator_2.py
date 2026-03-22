@@ -11,7 +11,7 @@ import string
 import re
 
 class RetailDataGenerator:
-    def __init__(self, seed=42, add_noise=True):
+    def __init__(self, seed=42, add_noise=True, folder_path='/opt/airflow/master_data'):
         """Initialize the retail data generator with configurable parameters."""
         self.fake = Faker()
         Faker.seed(seed)
@@ -96,7 +96,7 @@ class RetailDataGenerator:
         self.duplicate_transactions = []
         
         # Load or generate master data
-        self._load_or_generate_master_data()
+        self._load_or_generate_master_data(output_dir=folder_path)
     
     def _introduce_encoding_issues(self, text):
         """Introduce realistic encoding and special character issues."""
