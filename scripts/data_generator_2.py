@@ -54,10 +54,10 @@ class RetailDataGenerator:
             'reference_integrity_errors': 0.10,  # 10% invalid references
             
             # Timestamp Issues
-            'timestamp_delays': 0.25,            # 25% delayed timestamps
-            'batch_processing_delays': 0.10,     # 10% batch delays
-            'timezone_inconsistencies': 0.08,    # 8% timezone issues
-            'system_clock_drift': 0.05,          # 5% clock drift
+        #     'timestamp_delays': 0.25,            # 25% delayed timestamps
+        #     'batch_processing_delays': 0.10,     # 10% batch delays
+        #     'timezone_inconsistencies': 0.08,    # 8% timezone issues
+        #     'system_clock_drift': 0.05,          # 5% clock drift
         }
         
         # Product categories and their typical price ranges
@@ -116,43 +116,44 @@ class RetailDataGenerator:
         return random.choice(issues)(text)
     
     def _introduce_timestamp_issues(self, base_datetime):
-        """Introduce various timestamp-related issues."""
-        if not self.add_noise:
-            return base_datetime
+        return base_datetime
+    #     """Introduce various timestamp-related issues."""
+    #     if not self.add_noise:
+    #         return base_datetime
         
-        modified_datetime = base_datetime
+    #     modified_datetime = base_datetime
         
-        # Timestamp delays (batch processing, system delays)
-        if random.random() < self.noise_config['timestamp_delays']:
-            delay_minutes = random.choices(
-                [5, 15, 30, 60, 120, 240],  # Delay ranges
-                weights=[30, 25, 20, 15, 7, 3]  # More common for shorter delays
-            )[0]
-            modified_datetime = base_datetime + timedelta(minutes=delay_minutes)
+    #     # Timestamp delays (batch processing, system delays)
+    #     if random.random() < self.noise_config['timestamp_delays']:
+    #         delay_minutes = random.choices(
+    #             [5, 15, 30, 60, 120, 240],  # Delay ranges
+    #             weights=[30, 25, 20, 15, 7, 3]  # More common for shorter delays
+    #         )[0]
+    #         modified_datetime = base_datetime + timedelta(minutes=delay_minutes)
         
-        # Batch processing delays (transactions recorded in batches)
-        if random.random() < self.noise_config['batch_processing_delays']:
-            # Round to nearest hour + random batch delay
-            modified_datetime = modified_datetime.replace(minute=0, second=0)
-            batch_delay = random.randint(1, 6) * 60  # 1-6 hours
-            modified_datetime += timedelta(minutes=batch_delay)
+    #     # Batch processing delays (transactions recorded in batches)
+    #     if random.random() < self.noise_config['batch_processing_delays']:
+    #         # Round to nearest hour + random batch delay
+    #         modified_datetime = modified_datetime.replace(minute=0, second=0)
+    #         batch_delay = random.randint(1, 6) * 60  # 1-6 hours
+    #         modified_datetime += timedelta(minutes=batch_delay)
         
-        # System clock drift
-        if random.random() < self.noise_config['system_clock_drift']:
-            drift_seconds = random.randint(-300, 300)  # ±5 minutes drift
-            modified_datetime += timedelta(seconds=drift_seconds)
+    #     # System clock drift
+    #     if random.random() < self.noise_config['system_clock_drift']:
+    #         drift_seconds = random.randint(-300, 300)  # ±5 minutes drift
+    #         modified_datetime += timedelta(seconds=drift_seconds)
         
-        # Future timestamps (system clock issues)
-        if random.random() < self.noise_config['future_dates']:
-            future_days = random.randint(1, 30)
-            modified_datetime = base_datetime + timedelta(days=future_days)
+    #     # Future timestamps (system clock issues)
+    #     if random.random() < self.noise_config['future_dates']:
+    #         future_days = random.randint(1, 30)
+    #         modified_datetime = base_datetime + timedelta(days=future_days)
         
-        # Timezone inconsistencies (recorded in different timezones)
-        if random.random() < self.noise_config['timezone_inconsistencies']:
-            tz_offset = random.choice([-8, -5, -3, 0, 3, 8])  # Different timezone offsets
-            modified_datetime += timedelta(hours=tz_offset)
+    #     # Timezone inconsistencies (recorded in different timezones)
+    #     if random.random() < self.noise_config['timezone_inconsistencies']:
+    #         tz_offset = random.choice([-8, -5, -3, 0, 3, 8])  # Different timezone offsets
+    #         modified_datetime += timedelta(hours=tz_offset)
         
-        return modified_datetime
+    #     return modified_datetime
     
     def _load_or_generate_master_data(self, output_dir='/opt/airflow/master_data'):
         """Load existing master data or generate new if it doesn't exist."""
@@ -619,7 +620,7 @@ class RetailDataGenerator:
             second=random.randint(0, 59)
         )
         
-        # Apply timestamp issues
+        # # Apply timestamp issues
         transaction_time = self._introduce_timestamp_issues(base_transaction_time)
         
         # Handle missing timestamps

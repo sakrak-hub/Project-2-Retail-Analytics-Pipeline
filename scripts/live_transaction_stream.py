@@ -3,7 +3,7 @@ from kafka import KafkaProducer
 import boto3
 import pandas as pd
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, time
 import time
 import logging
 from io import BytesIO
@@ -35,12 +35,32 @@ stats = {
 
 def flatten_transactions(transactions):
 
-   base_txn = {k:v for k,v in transactions.items() if k !='items'}
-   return base_txn
+    records = []
+    for transaction in transactions:
+        base_txn = {k:v for k,v in transaction.items() if k !='items'}
+        
+        if transaction.get('items'):
+            for item in transaction['items']:
+                record = {**base_txn, **item}
+                records.append(record)
+        else:
+            records.append(base_txn)
+        
+    return records
+
+def stream_transaction(df):
+
+    df.sort_values(by='time')
+    date_today = datetime.now()
+
+    while date_today.time() < time(hour=22):
+        pass
+
+
 
 if __name__=='__main__':
 
-    transaction_date = datetime(2026,3,21)
+    transaction_date = datetime.now()
 
     retail_generator = RetailDataGenerator(folder_path='/mnt/d/Projects/Project-2-Retail-Analytics-Pipeline/tmp/master_data')
 
@@ -48,6 +68,5 @@ if __name__=='__main__':
 
     b = flatten_transactions(data)
 
-    for item in b:
-        for k,v in item.items():
-            print(f'{k}:{v}')
+    df = pd.DataFrame(b)
+    print(df.sort_values(by='time'))
