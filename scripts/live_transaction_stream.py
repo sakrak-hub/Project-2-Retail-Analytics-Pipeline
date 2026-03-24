@@ -4,7 +4,6 @@ import boto3
 import pandas as pd
 import json
 from datetime import datetime, time
-import time
 import logging
 from io import BytesIO
 
@@ -69,4 +68,19 @@ if __name__=='__main__':
     b = flatten_transactions(data)
 
     df = pd.DataFrame(b)
-    print(df.sort_values(by='time'))
+    time_offset = time(hour=8)
+    time_now = datetime.now().time()
+    df['time'] = pd.to_datetime(df['time']).dt.time
+    
+
+    while (datetime.now().time()<time(hour=22)):
+        filtered_df = df[df['time'].between(time_offset,datetime.now().time())].sort_values(by='time')
+        if len(filtered_df)!=0:
+            for index, transaction in filtered_df.iterrows():
+                print(transaction)
+                time_offset = transaction['time']
+        df = df[~df.index.isin(filtered_df.index)]
+        print(len(df))
+        if len(df)==0:
+            break
+
