@@ -65,22 +65,34 @@ if __name__=='__main__':
 
     data = retail_generator.generate_daily_transactions(transaction_date)
 
-    b = flatten_transactions(data)
+    transactions_records = flatten_transactions(data)
+    for transaction in transactions_records:
+        if transaction['time'] is None:
+            transaction['time']='23:59:59'
 
-    df = pd.DataFrame(b)
+    transactions_records = sorted(transactions_records, key=lambda item:(datetime.strptime(item['time'],"%H:%M:%S")))
     time_offset = time(hour=8)
-    time_now = datetime.now().time()
-    df['time'] = pd.to_datetime(df['time']).dt.time
+    while (datetime.now().time()<time(hour=22)):
+        filtered_list = [transaction for transaction in transactions 
+        if datetime.strptime(transaction['time'],'%H:%M:%S')>=time_offset
+        and datetime.strptime(transaction['time'],'%H:%M:%S')>=datetime.now().time()]
+
+        for transaction in filtered_list:
+            print(transaction)
+            time_offset=datetime.strptime(transaction['time'],'%H:%M:%S')
+    # transactions_df = pd.DataFrame(transactions_records)
+    # time_offset = time(hour=8)
+    # time_now = datetime.now().time()
+    # transactions_df['time'] = pd.to_datetime(transactions_df['time']).dt.time
     
 
-    while (datetime.now().time()<time(hour=22)):
-        filtered_df = df[df['time'].between(time_offset,datetime.now().time())].sort_values(by='time')
-        if len(filtered_df)!=0:
-            for index, transaction in filtered_df.iterrows():
-                print(transaction)
-                time_offset = transaction['time']
-        df = df[~df.index.isin(filtered_df.index)]
-        print(len(df))
-        if len(df)==0:
-            break
+    # while (datetime.now().time()<time(hour=22)):
+    #     filtered_df = transactions_df[transactions_df['time'].between(time_offset,datetime.now().time())].sort_values(by='time')
+    #     if len(filtered_df)!=0:
+    #         for index, transaction in filtered_df.iterrows():
+    #             print(transaction)
+    #             time_offset = transaction['time']
+    #     transactions_df = transactions_df[~transactions_df.index.isin(filtered_df.index)]
+    #     if len(df)==0:
+    #         break
 
