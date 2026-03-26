@@ -73,26 +73,14 @@ if __name__=='__main__':
     transactions_records = sorted(transactions_records, key=lambda item:(datetime.strptime(item['time'],"%H:%M:%S")))
     time_offset = time(hour=8)
     while (datetime.now().time()<time(hour=22)):
-        filtered_list = [transaction for transaction in transactions 
-        if datetime.strptime(transaction['time'],'%H:%M:%S')>=time_offset
-        and datetime.strptime(transaction['time'],'%H:%M:%S')>=datetime.now().time()]
+        filtered_list = [transaction for transaction in transactions_records 
+        if datetime.strptime(transaction['time'],'%H:%M:%S').time()>=time_offset
+        and datetime.strptime(transaction['time'],'%H:%M:%S').time()<=datetime.now().time()]
 
-        for transaction in filtered_list:
-            print(transaction)
-            time_offset=datetime.strptime(transaction['time'],'%H:%M:%S')
-    # transactions_df = pd.DataFrame(transactions_records)
-    # time_offset = time(hour=8)
-    # time_now = datetime.now().time()
-    # transactions_df['time'] = pd.to_datetime(transactions_df['time']).dt.time
+        if len(filtered_list)!=0:
+            for transaction in filtered_list:
+                producer.send('daily-retail-transactions',transaction)
+                time_offset=datetime.strptime(transaction['time'],'%H:%M:%S').time()
+        transaction_records = [transaction for transacation in transactions_records if transacation not in filtered_list]
+    producer.flush()
     
-
-    # while (datetime.now().time()<time(hour=22)):
-    #     filtered_df = transactions_df[transactions_df['time'].between(time_offset,datetime.now().time())].sort_values(by='time')
-    #     if len(filtered_df)!=0:
-    #         for index, transaction in filtered_df.iterrows():
-    #             print(transaction)
-    #             time_offset = transaction['time']
-    #     transactions_df = transactions_df[~transactions_df.index.isin(filtered_df.index)]
-    #     if len(df)==0:
-    #         break
-
