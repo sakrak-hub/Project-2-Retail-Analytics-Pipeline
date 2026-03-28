@@ -72,15 +72,20 @@ if __name__=='__main__':
 
     transactions_records = sorted(transactions_records, key=lambda item:(datetime.strptime(item['time'],"%H:%M:%S")))
     time_offset = time(hour=8)
-    while (datetime.now().time()<time(hour=22)):
-        filtered_list = [transaction for transaction in transactions_records 
-        if datetime.strptime(transaction['time'],'%H:%M:%S').time()>=time_offset
-        and datetime.strptime(transaction['time'],'%H:%M:%S').time()<=datetime.now().time()]
 
-        if len(filtered_list)!=0:
-            for transaction in filtered_list:
-                producer.send('daily-retail-transactions',transaction)
-                time_offset=datetime.strptime(transaction['time'],'%H:%M:%S').time()
-        transaction_records = [transaction for transacation in transactions_records if transacation not in filtered_list]
-    producer.flush()
-    
+    try:
+        while (datetime.now().time()<time(hour=22)):
+            filtered_list = [transaction for transaction in transactions_records 
+            if datetime.strptime(transaction['time'],'%H:%M:%S').time()>=time_offset
+            and datetime.strptime(transaction['time'],'%H:%M:%S').time()<=datetime.now().time()]
+
+            if len(filtered_list)!=0:
+                for transaction in filtered_list:
+                    producer.send('daily-retail-transactions',transaction)
+                    time_offset=datetime.strptime(transaction['time'],'%H:%M:%S').time()
+            
+                transaction_records = [transaction for transacation in transactions_records if transacation not in filtered_list]
+    except KeyboardInterrupt:
+        producer.flush()
+    finally:
+        producer.flush()
