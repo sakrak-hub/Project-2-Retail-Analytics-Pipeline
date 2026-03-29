@@ -1,7 +1,45 @@
 import pandas as pd
-import awswrangler as wr
-from datetime import datetime
+import streamlit
+import matplotlib.pyplot as plt
+from kafka import KafkaConsumer
 
-data = {"transaction_id": "TXN20260326000516", "date": "2026-03-26", "time": "18:16:56", "datetime": "2026-03-26 18:16:56", "customer_id": "CUST032267", "store_id": "ST020", "store_name": "Short Group Express", "cashier_id": null, "payment_method": "Debit Card", "subtotal": 4273.84, "tax_amount": 341.91, "total_amount": 4615.74, "items_count": 4, "loyalty_points_earned": 461, "promotion_code": null, "refund_reason": null, "status": "Completed", "product_id": "PRD010705", "product_name": "Modern Hat", "category": "Clothing", "quantity": 1, "unit_price": 186.6517538904687, "discount_percent": 0, "line_total": 186.65}
+kafka_consumer = KafkaConsumer(
+    topic,
+    bootstrap_servers = ['localhost:9092'],
+    value_deserializer = lambda v: json.loads(v.decode('utf-8')),
+    auto_offset_reset='earliest',
+    group_id='s3_parquet'
+)
 
-date
+def convert_dtypes(df):
+    new_df = df.copy()
+    
+    new_df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    new_df['datetime'] = pd.to_datetime(df['datetime'], errors='coerce')
+    
+    numeric_cols = ['subtotal', 'tax_amount', 'total_amount', 
+                    'items_count', 'loyalty_points_earned', 
+                    'quantity', 'unit_price', 'discount_percent', 
+                    'line_total']
+    for col in numeric_cols:
+        if col in new_df.columns:
+            new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
+    
+    string_cols = ['transaction_id', 'customer_id', 'store_id', 
+                   'cashier_id', 'product_id', 'store_name', 
+                   'payment_method', 'status', 'product_name', 'category']
+    for col in string_cols:
+        if col in new_df.columns:
+            new_df[col] = new_df[col].astype(str).replace('nan', None)
+    
+    return new_df
+
+if __name__=='__main__':
+    try:
+        transactions_list = []
+        for message in kafka_consumer:
+            event = message.value
+            transactions_list.append(event)
+            round+=1
+            
+            

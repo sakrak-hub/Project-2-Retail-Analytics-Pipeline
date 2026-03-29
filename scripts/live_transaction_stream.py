@@ -3,7 +3,7 @@ from kafka import KafkaProducer
 import boto3
 import pandas as pd
 import json
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import logging
 from io import BytesIO
 
@@ -59,7 +59,7 @@ def stream_transaction(df):
 
 if __name__=='__main__':
 
-    transaction_date = datetime.now()
+    transaction_date = datetime.now()+ timedelta(days=2)
 
     retail_generator = RetailDataGenerator(folder_path='/mnt/d/Projects/Project-2-Retail-Analytics-Pipeline/tmp/master_data')
 
@@ -82,10 +82,11 @@ if __name__=='__main__':
             if len(filtered_list)!=0:
                 for transaction in filtered_list:
                     producer.send('daily-retail-transactions',transaction)
+                    print(transaction.get('time',0))
                     time_offset=datetime.strptime(transaction['time'],'%H:%M:%S').time()
             
-                transaction_records = [transaction for transacation in transactions_records if transacation not in filtered_list]
+                transaction_records = [transaction for transaction in transactions_records if transaction not in filtered_list]
     except KeyboardInterrupt:
         producer.flush()
     finally:
-        producer.flush()
+        producer.close()
