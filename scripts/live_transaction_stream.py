@@ -59,7 +59,7 @@ def stream_transaction(df):
 
 if __name__=='__main__':
 
-    transaction_date = datetime.now()+ timedelta(days=2)
+    transaction_date = datetime.now()+ timedelta(days=1)
 
     retail_generator = RetailDataGenerator(folder_path='/mnt/d/Projects/Project-2-Retail-Analytics-Pipeline/tmp/master_data')
 
@@ -86,6 +86,8 @@ if __name__=='__main__':
                     time_offset=datetime.strptime(transaction['time'],'%H:%M:%S').time()
             
                 transaction_records = [transaction for transaction in transactions_records if transaction not in filtered_list]
+        for transaction in transaction_records:
+            producer.send('daily-retail-transactions',transaction)
     except KeyboardInterrupt:
         producer.flush()
     finally:
