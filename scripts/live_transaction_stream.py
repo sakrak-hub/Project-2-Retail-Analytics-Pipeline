@@ -7,9 +7,7 @@ from datetime import datetime, time, timedelta
 import logging
 from io import BytesIO
 
-stream_server = [
-    'localhost:9092'
-    ]
+stream_server = ['localhost:9092']
 
 s3_client = boto3.client('s3')
 
@@ -21,16 +19,7 @@ producer = KafkaProducer(
     compression_type = 'gzip'
     )
 
-s3_buffer = []
-stats = {
-            'total': 0,
-            'kafka_today': 0,
-            's3_historical': 0,
-            's3_null_timestamp': 0,
-            's3_future': 0,
-            's3_files_written': 0,
-            'kafka_failed': 0
-        }    
+s3_buffer = []   
 
 def flatten_transactions(transactions):
 
@@ -74,7 +63,7 @@ if __name__=='__main__':
     time_offset = time(hour=8)
 
     try:
-        while (datetime.now().time()<time(hour=22)):
+        while (time_offset<=time(23,59,59)):
             filtered_list = [transaction for transaction in transactions_records 
             if datetime.strptime(transaction['time'],'%H:%M:%S').time()>=time_offset
             and datetime.strptime(transaction['time'],'%H:%M:%S').time()<=datetime.now().time()]
@@ -86,8 +75,7 @@ if __name__=='__main__':
                     time_offset=datetime.strptime(transaction['time'],'%H:%M:%S').time()
             
                 transaction_records = [transaction for transaction in transactions_records if transaction not in filtered_list]
-        for transaction in transaction_records:
-            producer.send('daily-retail-transactions',transaction)
+
     except KeyboardInterrupt:
         producer.flush()
     finally:

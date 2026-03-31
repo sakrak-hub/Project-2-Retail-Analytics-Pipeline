@@ -8,9 +8,11 @@ import io
 
 s3_client = boto3.client('s3')
 bucket_name = 'my-retail-2026-analytics-5805'
+bucket_file_path = 'retail_data/transactions/'
 kafka_bootstrap = ['localhost:9092']
 topic='daily-retail-transactions'
 group_id='s3_parquet'
+logger = logging.getLogger(__name__)
 
 kafka_consumer = KafkaConsumer(
     topic,
@@ -65,14 +67,14 @@ def update_or_create_s3_object(bucket_name, object_key, df):
     except (FileNotFoundError, OSError) as e:
         upload_df_to_s3(df,bucket_name,object_key)
 
-if __name__=='__main__':
+def stream_to_s3(consumer, bucket_name, bucket_file_path):
     try:
         transactions_list = []
-        for message in kafka_consumer:
+        for message in consumer:
             event = message.value
             transactions_list.append(event)
             if len(transactions_list)==1000:
-                object_key = f"retail_data/transactions/transactions_{event.get('date',str(datetime.now().date()))}.parquet"
+                object_key = f"{bucket_file_path}transactions_{event.get('date',str(datetime.now().date()))}.parquet"
                 print(f"Uploading to {object_key}")
                 append_df = pd.DataFrame(transactions_list)
                 update_or_create_s3_object(bucket_name,object_key,append_df)
@@ -83,3 +85,7 @@ if __name__=='__main__':
         kafka_consumer.close()
     finally:
         kafka_consumer.close()
+
+if __name__=='__main__':
+    logger.info(f"Starting streaming to S3 for date {datetime.now().date()}")
+    stream_to_s3(kafka_consumer,bucket_name,bucket_file_path)
