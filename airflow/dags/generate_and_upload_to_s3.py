@@ -61,7 +61,7 @@ with DAG(
     generate_retail_data = BashOperator(
         task_id = 'generate_retail_data',
         trigger_rule="none_skipped",
-        bash_command = 'python3 /opt/airflow/scripts/data_generator_2.py {{logical_date.year}} {{logical_date.month}} {{logical_date.day}}'
+        bash_command = 'python3 /opt/airflow/scripts/data_generator.py {{logical_date.year}} {{logical_date.month}} {{logical_date.day}}'
     )
 
     upload_master_data = PythonOperator(

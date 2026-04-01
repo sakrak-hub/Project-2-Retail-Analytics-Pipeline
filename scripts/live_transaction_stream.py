@@ -48,9 +48,9 @@ def stream_transaction(df):
 
 if __name__=='__main__':
 
-    transaction_date = datetime.now()+ timedelta(days=1)
+    transaction_date = datetime.now()
 
-    retail_generator = RetailDataGenerator(folder_path='/mnt/d/Projects/Project-2-Retail-Analytics-Pipeline/tmp/master_data')
+    retail_generator = RetailDataGenerator()
 
     data = retail_generator.generate_daily_transactions(transaction_date)
 
