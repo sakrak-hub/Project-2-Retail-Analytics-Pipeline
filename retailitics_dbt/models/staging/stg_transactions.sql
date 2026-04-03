@@ -1,198 +1,153 @@
 {{
     config(
         materialized='incremental',
-        unique_key='line_item_key',
+        unique_key=['transaction_id_clean', 'product_id'],
         on_schema_change='fail',
-        tags=['staging', 'silver', 'transactions']
+        tags=['staging', 'incremental']
     )
 }}
 
-WITH max_loaded AS (
-    SELECT COALESCE(MAX(staging_processed_at), '2026-01-01'::TIMESTAMP) AS max_load
-        FROM {{ this }} 
-),
-
-bronze_source AS (
-    SELECT * 
-    FROM {{ ref('bronze_transactions') }}
+WITH source_data AS (
+    SELECT * FROM {{ ref('raw_transactions') }}
     
     {% if is_incremental() %}
-    WHERE raw_loaded_at > (
-        SELECT max_load
-        FROM max_loaded
+
+    WHERE NOT EXISTS (
+        SELECT 1 
+        FROM {{ this }} existing
+        WHERE existing.transaction_id_clean = REGEXP_REPLACE({{ ref('raw_transactions') }}.transaction_id, 'DUP', '', 'g')
+          AND existing.product_id = {{ ref('raw_transactions') }}.product_id
+          AND existing._row_hash = MD5(
+              COALESCE({{ ref('raw_transactions') }}.transaction_id, '') || '|' ||
+              COALESCE({{ ref('raw_transactions') }}.product_id, '') || '|' ||
+              COALESCE(CAST({{ ref('raw_transactions') }}.quantity AS VARCHAR), '') || '|' ||
+              COALESCE(CAST({{ ref('raw_transactions') }}.unit_price AS VARCHAR), '') || '|' ||
+              COALESCE(CAST({{ ref('raw_transactions') }}.line_total AS VARCHAR), '') || '|' ||
+              COALESCE({{ ref('raw_transactions') }}.status, '')
+          )
     )
     {% endif %}
 ),
 
-deduplicated AS (
-    SELECT 
-        *,
-        ROW_NUMBER() OVER (
-            PARTITION BY transaction_id_clean, product_id 
-            ORDER BY 
-                bronze_processed_at DESC,
-                CASE WHEN is_refund THEN 0 ELSE 1 END DESC
-        ) AS row_num
-    FROM bronze_source
-),
-
-filtered AS (
-    SELECT *
-    FROM deduplicated
-    WHERE row_num = 1
-    
-    AND missing_transaction_id_flag = 0
-    AND missing_date_flag = 0
-    AND missing_customer_id_flag = 0
-    AND missing_product_id_flag = 0
-    
-    AND NOT (zero_total_amount_flag = 1 AND is_refund = FALSE)
-),
-
-staging_final AS (
+staging_cleaned AS (
     SELECT
-        {{ dbt_utils.generate_surrogate_key([
-            'transaction_id_clean', 
-            'product_id', 
-            'bronze_processed_at'
-        ]) }} AS line_item_key,
+        REGEXP_REPLACE(transaction_id, 'DUP', '', 'g') AS transaction_id_clean,
+        transaction_id AS transaction_id_raw,
+        REGEXP_REPLACE(transaction_id || '-' || product_id, 'DUP', '', 'g') AS transaction_product,
+
+        CASE 
+            WHEN date IS NULL OR TRIM(date::VARCHAR) = '' THEN strptime(regexp_extract(transaction_id, 'TXN(\d{8})', 1), '%Y%m%d')::DATE
+            ELSE TRY_CAST(date AS DATE)
+        END AS transaction_date,
+
+        CASE 
+            WHEN time IS NULL OR TRIM(time::VARCHAR) = '' THEN '00:00:00'::TIME
+            ELSE TRY_CAST(time AS TIME)
+        END AS transaction_time,
+
+        CASE 
+            WHEN date IS NULL OR TRIM(date::VARCHAR) = '' OR time IS NULL OR TRIM(time::VARCHAR) = '' 
+            THEN strptime(regexp_extract(transaction_id, 'TXN(\d{8})', 1), '%Y%m%d')::DATE + '00:00:00'::TIME
+            ELSE TRY_CAST(date AS TIMESTAMP) + TRY_CAST(time AS INTERVAL)
+        END AS transaction_datetime,
+
+        CASE 
+            WHEN date IS NULL OR TRIM(date::VARCHAR) = '' THEN YEAR(strptime(regexp_extract(transaction_id, 'TXN(\d{8})', 1), '%Y%m%d')::DATE)
+            ELSE YEAR(TRY_CAST(date AS DATE))
+        END AS transaction_year,
         
-        transaction_id_clean AS transaction_id,
-        product_id,
+        CASE 
+            WHEN date IS NULL OR TRIM(date::VARCHAR) = '' THEN MONTH(strptime(regexp_extract(transaction_id, 'TXN(\d{8})', 1), '%Y%m%d')::DATE)
+            ELSE MONTH(TRY_CAST(date AS DATE))
+        END AS transaction_month,
+        
+        CASE 
+            WHEN date IS NULL OR TRIM(date::VARCHAR) = '' THEN DAY(strptime(regexp_extract(transaction_id, 'TXN(\d{8})', 1), '%Y%m%d')::DATE)
+            ELSE DAY(TRY_CAST(date AS DATE))
+        END AS transaction_day,
+
+        CASE 
+            WHEN date IS NULL OR TRIM(date::VARCHAR) = '' THEN DAYOFWEEK(strptime(regexp_extract(transaction_id, 'TXN(\d{8})', 1), '%Y%m%d')::DATE)
+            ELSE DAYOFWEEK(TRY_CAST(date AS DATE))
+        END AS transaction_day_of_week,
+
+        CASE 
+            WHEN time IS NULL OR TRIM(time::VARCHAR) = '' THEN NULL
+            ELSE HOUR(TRY_CAST(time AS TIME))
+        END AS transaction_hour,
+
         customer_id,
         store_id,
-        store_name,
+        TRIM(REGEXP_REPLACE(store_name, '[^\x20-\x7E]', '', 'g')) AS store_name,
         cashier_id,
 
-        transaction_date,
-        transaction_time,
-        transaction_datetime,
-        transaction_year,
-        transaction_month,
-        transaction_day,
-        transaction_day_of_week,
-        transaction_hour,
+        UPPER(TRIM(payment_method)) AS payment_method,
+        UPPER(TRIM(status)) AS payment_status,
 
         CASE 
-            WHEN transaction_day_of_week IN (0, 6) THEN TRUE
+            WHEN status = 'Refunded' OR refund_reason IS NOT NULL THEN TRUE
             ELSE FALSE
-        END AS is_weekend,
-        
-        CASE 
-            WHEN transaction_day_of_week = 0 THEN 'Sunday'
-            WHEN transaction_day_of_week = 1 THEN 'Monday'
-            WHEN transaction_day_of_week = 2 THEN 'Tuesday'
-            WHEN transaction_day_of_week = 3 THEN 'Wednesday'
-            WHEN transaction_day_of_week = 4 THEN 'Thursday'
-            WHEN transaction_day_of_week = 5 THEN 'Friday'
-            WHEN transaction_day_of_week = 6 THEN 'Saturday'
-        END AS day_name,
-        
-        CASE 
-            WHEN transaction_hour IS NULL THEN 'Unknown'
-            WHEN transaction_hour BETWEEN 6 AND 11 THEN 'Morning (6-11am)'
-            WHEN transaction_hour BETWEEN 12 AND 16 THEN 'Afternoon (12-4pm)'
-            WHEN transaction_hour BETWEEN 17 AND 20 THEN 'Evening (5-8pm)'
-            WHEN transaction_hour BETWEEN 21 AND 23 THEN 'Night (9-11pm)'
-            ELSE 'Late Night (12-5am)'
-        END AS time_of_day,
+        END AS is_refund,
 
-        payment_method,
-        payment_status,
+        TRIM(refund_reason) AS refund_reason,
+        UPPER(TRIM(promotion_code)) AS promotion_code,
+
+        CASE 
+            WHEN promotion_code IS NOT NULL AND TRIM(promotion_code) != '' THEN TRUE
+            ELSE FALSE
+        END AS has_promotion,
 
         subtotal,
         tax_amount,
-        total_amount,
+        total_amount, 
         items_count,
         loyalty_points_earned,
 
-        product_name,
-        category,
+        product_id,
+        TRIM(REGEXP_REPLACE(product_name, '[^\x20-\x7E]', '', 'g')) AS product_name,
+        TRIM(category) AS category,
         quantity,
-        unit_price,
+        ROUND(unit_price,2) AS unit_price,
         discount_percent,
-        discount_amount,
+        (quantity * unit_price * (discount_percent/100)) AS discount_amount,
         line_total,
 
-        CASE 
-            WHEN line_total < 0 AND is_refund = FALSE THEN 0
-            WHEN line_total = 0 AND quantity > 0 AND unit_price > 0 
-                THEN quantity * unit_price * (1 - discount_percent/100)
-            ELSE line_total
-        END AS line_total_clean,
-        
-        CASE 
-            WHEN quantity < 0 AND is_refund = FALSE THEN ABS(quantity)
-            ELSE quantity
-        END AS quantity_clean,
+        CASE WHEN transaction_id IS NULL THEN 1 ELSE 0 END AS missing_transaction_id_flag,
+        CASE WHEN date IS NULL OR TRIM(date::VARCHAR) = '' THEN 1 ELSE 0 END AS missing_date_flag,
+        CASE WHEN time IS NULL OR TRIM(time::VARCHAR) = '' THEN 1 ELSE 0 END AS missing_time_flag,
+        CASE WHEN customer_id IS NULL THEN 1 ELSE 0 END AS missing_customer_id_flag,
+        CASE WHEN product_id IS NULL THEN 1 ELSE 0 END AS missing_product_id_flag,
+        CASE WHEN cashier_id IS NULL OR TRIM(cashier_id) = '' THEN 1 ELSE 0 END AS missing_cashier_id_flag,
+        CASE WHEN payment_method IS NULL OR TRIM(payment_method) = '' THEN 1 ELSE 0 END AS missing_payment_method_flag,
 
-        is_refund,
-        refund_reason,
-        has_promotion,
-        promotion_code,
+        CASE WHEN quantity < 0 THEN 1 ELSE 0 END AS negative_quantity_flag,
+        CASE WHEN total_amount < 0 THEN 1 ELSE 0 END AS negative_amount_flag,
+        CASE WHEN line_total < 0 THEN 1 ELSE 0 END AS negative_line_total_flag,
 
-        CASE 
-            WHEN discount_percent > 0 THEN TRUE
-            ELSE FALSE
-        END AS has_discount,
-        
-        CASE 
-            WHEN quantity > 1 THEN TRUE
-            ELSE FALSE
-        END AS is_multi_quantity,
-        
-        CASE 
-            WHEN quantity >= 10 THEN TRUE
-            ELSE FALSE
-        END AS is_bulk_purchase,
-        
-        CASE 
-            WHEN line_total > 1000 THEN TRUE
-            ELSE FALSE
-        END AS is_high_value_item,
-        
-        CASE 
-            WHEN loyalty_points_earned > 0 THEN TRUE
-            ELSE FALSE
-        END AS earned_loyalty_points,
+        CASE WHEN total_amount IS NULL OR total_amount = 0 THEN 1 ELSE 0 END AS zero_total_amount_flag,
+        CASE WHEN quantity IS NULL OR quantity = 0 THEN 1 ELSE 0 END AS zero_quantity_flag,
 
-        CASE 
-            WHEN is_refund = TRUE THEN 'Refund'
-            WHEN has_promotion = TRUE AND discount_percent > 25 THEN 'Promotional Sale'
-            WHEN has_promotion = TRUE THEN 'Promotion'
-            WHEN discount_percent > 25 THEN 'Deep Discount'
-            WHEN discount_percent > 0 THEN 'Discounted'
-            ELSE 'Regular Sale'
-        END AS transaction_type,
+        CASE WHEN unit_price > 10000 THEN 1 ELSE 0 END AS high_unit_price_flag,
+        CASE WHEN total_amount > 100000 THEN 1 ELSE 0 END AS high_total_amount_flag,
 
-        CASE 
-            WHEN (negative_quantity_flag = 1 
-                OR negative_amount_flag = 1 
-                OR negative_line_total_flag = 1
-                OR zero_total_amount_flag = 1)
-                AND is_refund = FALSE
-            THEN 'CORRECTED'
-            WHEN missing_time_flag = 1
-                OR missing_cashier_id_flag = 1
-            THEN 'INCOMPLETE'
-            ELSE 'CLEAN'
-        END AS data_quality_status,
+        _loaded_at_date AS raw_loaded_at,
+        CURRENT_TIMESTAMP AS staging_processed_at, 
+        '{{ run_started_at }}' AS _batch_id,
+        '{{ var("source_system", "RETAIL_S3") }}' AS _source_system,
 
-        negative_quantity_flag AS had_negative_quantity,
-        negative_amount_flag AS had_negative_amount,
-        zero_total_amount_flag AS had_zero_total,
-        missing_time_flag AS had_missing_time,
-        missing_cashier_id_flag AS had_missing_cashier,
-        high_unit_price_flag AS had_high_unit_price,
+        MD5(
+            COALESCE(transaction_id, '') || '|' ||
+            COALESCE(product_id, '') || '|' ||
+            COALESCE(CAST(quantity AS VARCHAR), '') || '|' ||
+            COALESCE(CAST(unit_price AS VARCHAR), '') || '|' ||
+            COALESCE(CAST(line_total AS VARCHAR), '') || '|' ||
+            COALESCE(CAST(total_amount AS VARCHAR), '') || '|' ||
+            COALESCE(status, '')
+        ) AS _row_hash,
 
-        raw_loaded_at, 
-        bronze_processed_at,
-        CURRENT_TIMESTAMP AS staging_processed_at,
-        _batch_id AS bronze_batch_id,
-        '{{ invocation_id }}' AS staging_batch_id,
-        _source_system
-        
-    FROM filtered
+        'raw_transactions' AS _source_table
+    
+    FROM source_data
 )
 
-SELECT * FROM staging_final
+SELECT * FROM staging_cleaned

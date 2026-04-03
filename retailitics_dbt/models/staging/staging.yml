@@ -1,0 +1,1778 @@
+version: 2
+
+models:
+  - name: stg_transactions
+    description: >
+      Raw staging table for transactions with data quality flags.
+      Does NOT filter bad data - only flags issues for downstream processing.
+      Deduplicates on (transaction_id_clean, product_id) composite key using row hash.
+      This is LINE ITEM level data (one row per product in a transaction).
+    
+    config:
+      tags: ['staging', 'incremental', 'transactions']
+    
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - transaction_id_clean
+            - product_id
+          config:
+            severity: error
+            error_if: ">0"
+      
+      - dbt_utils.recency:
+          datepart: day
+          field: staging_processed_at
+          interval: 2
+          config:
+            severity: warn
+    
+    columns:
+      - name: transaction_id_clean
+        description: Transaction ID with DUP prefix removed
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: transaction_id_raw
+        description: Original transaction ID from source (may contain DUP prefix)
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: transaction_product
+        description: Composite key of transaction_id and product_id
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: transaction_date
+        description: Transaction date (extracted from date field or transaction_id if missing)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_DATE"
+              config:
+                severity: error
+                error_if: ">0"
+          - dbt_utils.expression_is_true:
+              expression: ">= '2020-01-01'"
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: transaction_time
+        description: Transaction time (defaults to 00:00:00 if missing)
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: transaction_datetime
+        description: Combined transaction date and time
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: transaction_year
+        description: Year extracted from transaction date
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.accepted_range:
+              min_value: 2020
+              max_value: 2030
+              config:
+                severity: error
+      
+      - name: transaction_month
+        description: Month extracted from transaction date
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 12
+              inclusive: true
+              config:
+                severity: error
+      
+      - name: transaction_day
+        description: Day extracted from transaction date
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 31
+              inclusive: true
+              config:
+                severity: error
+      
+      - name: transaction_day_of_week
+        description: Day of week (0=Sunday, 6=Saturday)
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 6
+              inclusive: true
+              config:
+                severity: error
+      
+      - name: transaction_hour
+        description: Hour of transaction (0-23, NULL if time missing)
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 23
+              inclusive: true
+              where: "transaction_hour IS NOT NULL"
+              config:
+                severity: error
+      
+      - name: customer_id
+        description: Customer identifier
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">100"
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
+              config:
+                severity: warn
+                error_if: ">1000"
+      
+      - name: store_id
+        description: Store identifier
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">100"
+          - relationships:
+              to: ref('stg_stores')
+              field: store_id
+              config:
+                severity: warn
+                error_if: ">500"
+      
+      - name: store_name
+        description: Store name (cleaned)
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: cashier_id
+        description: Cashier identifier
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">200"
+      
+      - name: payment_method
+        description: Payment method (uppercase)
+        tests:
+          - accepted_values:
+              values: ['CASH', 'CREDIT CARD', 'DEBIT CARD', 'MOBILE PAYMENT', 'GIFT CARD', 'CHECK', 'OTHER']
+              config:
+                severity: warn
+                warn_if: ">500"
+      
+      - name: payment_status
+        description: Payment status (uppercase)
+        tests:
+          - accepted_values:
+              values: ['COMPLETED', 'PENDING', 'FAILED', 'REFUNDED', 'CANCELLED']
+              config:
+                severity: warn
+                warn_if: ">200"
+      
+      - name: is_refund
+        description: TRUE if this is a refund transaction
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+      
+      - name: refund_reason
+        description: Reason for refund (NULL if not a refund)
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "IS NOT NULL"
+              where: "is_refund = TRUE"
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: promotion_code
+        description: Promotion code applied (uppercase, NULL if none)
+      
+      - name: has_promotion
+        description: TRUE if promotion was applied
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+      
+      - name: subtotal
+        description: Transaction subtotal before tax
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: tax_amount
+        description: Tax amount for transaction
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: total_amount
+        description: Total transaction amount (subtotal + tax)
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: items_count
+        description: Number of items in transaction
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1000
+              where: "items_count IS NOT NULL"
+              config:
+                severity: warn
+      
+      - name: loyalty_points_earned
+        description: Loyalty points earned from transaction
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100000
+              where: "loyalty_points_earned IS NOT NULL"
+              config:
+                severity: warn
+      
+      - name: product_id
+        description: Product identifier
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - relationships:
+              to: ref('stg_products')
+              field: product_id
+              config:
+                severity: warn
+                error_if: ">1000"
+      
+      - name: product_name
+        description: Product name (cleaned)
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: category
+        description: Product category
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: quantity
+        description: Quantity of product purchased
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: unit_price
+        description: Price per unit (rounded to 2 decimals)
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: discount_percent
+        description: Discount percentage applied
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+              where: "discount_percent IS NOT NULL"
+              config:
+                severity: warn
+                warn_if: ">200"
+      
+      - name: discount_amount
+        description: Calculated discount amount
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1000000
+              where: "discount_amount IS NOT NULL"
+              config:
+                severity: warn
+      
+      - name: line_total
+        description: Total for this line item
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      # Data Quality Flags
+      - name: missing_transaction_id_flag
+        description: Flag for missing transaction_id
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "= 0"
+              config:
+                severity: error
+      
+      - name: missing_date_flag
+        description: Flag for missing date field
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: missing_time_flag
+        description: Flag for missing time field
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: missing_customer_id_flag
+        description: Flag for missing customer_id
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: missing_product_id_flag
+        description: Flag for missing product_id
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "= 0"
+              config:
+                severity: error
+      
+      - name: missing_cashier_id_flag
+        description: Flag for missing cashier_id
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: missing_payment_method_flag
+        description: Flag for missing payment_method
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: negative_quantity_flag
+        description: Flag for negative quantity values
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: negative_amount_flag
+        description: Flag for negative total_amount values
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: negative_line_total_flag
+        description: Flag for negative line_total values
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: zero_total_amount_flag
+        description: Flag for zero or NULL total_amount
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: zero_quantity_flag
+        description: Flag for zero or NULL quantity
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: high_unit_price_flag
+        description: Flag for unusually high unit prices (>10000)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      - name: high_total_amount_flag
+        description: Flag for unusually high total amounts (>100000)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+      
+      # Metadata columns
+      - name: raw_loaded_at
+        description: When raw record was loaded from S3
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: staging_processed_at
+        description: When this record was processed into staging
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_TIMESTAMP"
+              config:
+                severity: error
+      
+      - name: _batch_id
+        description: Batch identifier for this load
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: _source_system
+        description: Source system identifier
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['RETAIL_S3']
+              config:
+                severity: warn
+      
+      - name: _row_hash
+        description: MD5 hash of key fields for change detection
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: _source_table
+        description: Source table name
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['raw_transactions']
+              config:
+                severity: error
+
+  - name: stg_customers
+    description: >
+      Staging table for customers with zip code enrichment and data quality filtering.
+      Filters out records with critical missing fields (email, city, state, zip_code).
+      Enriches with geographic data from zip code lookup.
+    
+    config:
+      tags: ['silver', 'staging', 'customers']
+    
+    tests:
+      - dbt_utils.recency:
+          datepart: day
+          field: _staging_loaded_at
+          interval: 2
+          config:
+            severity: warn
+    
+    columns:
+      - name: customer_id
+        description: Unique customer identifier
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: first_name
+        description: Customer's first name
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">100"
+          - dbt_utils.not_empty_string:
+              config:
+                severity: warn
+      
+      - name: last_name
+        description: Customer's last name
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: full_name
+        description: Customer's full name
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: gender
+        description: Customer's gender
+        tests:
+          - accepted_values:
+              values: ['M', 'F', 'Male', 'Female', 'Other', 'Non-binary', 'Prefer not to say']
+              quote: true
+              config:
+                severity: warn
+                error_if: ">500"
+      
+      - name: date_of_birth
+        description: Customer's date of birth
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_DATE"
+              config:
+                severity: error
+                error_if: ">0"
+          - dbt_utils.expression_is_true:
+              expression: ">= '1920-01-01'"
+              config:
+                severity: warn
+                error_if: ">10"
+      
+      - name: age
+        description: Customer's age in years
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 120
+              inclusive: true
+              config:
+                severity: error
+          - dbt_utils.accepted_range:
+              min_value: 18
+              max_value: 100
+              inclusive: true
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: age_group
+        description: Customer age group category
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['Under 18', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
+              config:
+                severity: error
+      
+      - name: email
+        description: Customer's email address
+        tests:
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+          - dbt_expectations.expect_column_values_to_match_regex:
+              regex: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+              config:
+                severity: warn
+                warn_if: ">50"
+      
+      - name: phone
+        description: Customer's phone number
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">200"
+      
+      - name: phone_digits_only
+        description: Phone number with only digits
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "LENGTH(phone_digits_only) >= 10"
+              where: "phone_digits_only IS NOT NULL"
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: phone_too_short_flag
+        description: Flag indicating phone number is too short
+        tests:
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "= 0"
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: street_address
+        description: Customer's street address
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: city
+        description: Customer's city (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: state
+        description: Customer's state (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+          - dbt_expectations.expect_column_value_lengths_to_equal:
+              value: 2
+              config:
+                severity: warn
+                warn_if: ">50"
+      
+      - name: zip_code
+        description: Customer's zip code (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+          - dbt_expectations.expect_column_value_lengths_to_be_between:
+              min_value: 5
+              max_value: 10
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: state_code_from_zip
+        description: State code derived from zip code lookup
+        tests:
+          - dbt_expectations.expect_column_value_lengths_to_equal:
+              value: 2
+              where: "state_code_from_zip IS NOT NULL"
+              config:
+                severity: warn
+      
+      - name: county_name
+        description: County name from zip code lookup
+      
+      - name: fips_code
+        description: FIPS county code from zip lookup
+        tests:
+          - dbt_expectations.expect_column_value_lengths_to_equal:
+              value: 5
+              where: "fips_code IS NOT NULL"
+              config:
+                severity: warn
+      
+      - name: latitude
+        description: Latitude from zip code centroid
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 24
+              max_value: 50
+              where: "latitude IS NOT NULL"
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: longitude
+        description: Longitude from zip code centroid
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -125
+              max_value: -65
+              where: "longitude IS NOT NULL"
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: registration_date
+        description: Customer registration date
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_DATE"
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: ">= '2020-01-01'"
+              config:
+                severity: warn
+                warn_if: ">50"
+      
+      - name: days_since_registration
+        description: Number of days since customer registered
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 10000
+              config:
+                severity: warn
+      
+      - name: customer_tenure_category
+        description: Customer tenure categorization
+        tests:
+          - accepted_values:
+              values: ['New (< 3 months)', 'Recent (3-12 months)', 'Established (1-2 years)', 'Loyal (2+ years)']
+              config:
+                severity: warn
+      
+      - name: customer_segment
+        description: Customer segment classification
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: lifetime_value
+        description: Customer lifetime value
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.accepted_range:
+              min_value: -10000
+              max_value: 1000000
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: ltv_category
+        description: Lifetime value category
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['High Value', 'Medium Value', 'Low Value', 'Very Low Value', 'Negative']
+              config:
+                severity: warn
+      
+      - name: invalid_zip_code_flag
+        description: Flag for zip codes that don't exist in lookup table
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "= 0"
+              config:
+                severity: warn
+                warn_if: ">200"
+      
+      - name: state_zip_mismatch_flag
+        description: Flag for state/zip code mismatches
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0, 1]
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "= 0"
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: missing_email_flag
+        description: Flag for missing email (should be 0 in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0]
+              config:
+                severity: error
+      
+      - name: missing_city_flag
+        description: Flag for missing city (should be 0 in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0]
+              config:
+                severity: error
+      
+      - name: missing_state_flag
+        description: Flag for missing state (should be 0 in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0]
+              config:
+                severity: error
+      
+      - name: missing_zip_code_flag
+        description: Flag for missing zip code (should be 0 in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0]
+              config:
+                severity: error
+      
+      - name: invalid_email_flag
+        description: Flag for invalid email (should be 0 in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [0]
+              config:
+                severity: error
+      
+      - name: quality_issues_count
+        description: Total count of quality issues for this customer
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 20
+              inclusive: true
+              config:
+                severity: warn
+          - dbt_utils.expression_is_true:
+              expression: "<= 2"
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: quality_tier
+        description: Overall data quality classification
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['CLEAN', 'ACCEPTABLE', 'POOR']
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "IN ('CLEAN', 'ACCEPTABLE')"
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: _loaded_at
+        description: When raw record was loaded from source
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: _batch_id
+        description: Batch identifier for this load
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: _source_system
+        description: Source system identifier
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['RETAIL_S3']
+              config:
+                severity: warn
+      
+      - name: _staging_loaded_at
+        description: When this record was loaded to staging
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_TIMESTAMP"
+              config:
+                severity: error
+
+  - name: stg_products
+    description: >
+      Staging table for products with data quality filtering.
+      Filters out records with missing product names, invalid prices/costs,
+      or missing categories. Enriches with calculated fields and categorizations.
+    
+    config:
+      tags: ['staging', 'silver', 'products']
+    
+    tests:
+      - dbt_utils.recency:
+          datepart: day
+          field: staging_loaded_at
+          interval: 2
+          config:
+            severity: warn
+    
+    columns:
+      - name: product_id
+        description: Unique product identifier
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: product_name
+        description: Product name (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: category
+        description: Product category (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: subcategory
+        description: Product subcategory
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: brand
+        description: Product brand
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">200"
+      
+      - name: sku
+        description: Stock keeping unit identifier
+        tests:
+          - unique:
+              config:
+                severity: warn
+                warn_if: ">50"
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: supplier
+        description: Product supplier
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">200"
+      
+      - name: selling_price
+        description: Current selling price (required, must be positive)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "> 0"
+              config:
+                severity: error
+                error_if: ">0"
+          - dbt_utils.accepted_range:
+              min_value: 0.01
+              max_value: 100000
+              config:
+                severity: warn
+                warn_if: ">50"
+      
+      - name: cost_price
+        description: Cost price (required, must be positive)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "> 0"
+              config:
+                severity: error
+                error_if: ">0"
+          - dbt_utils.accepted_range:
+              min_value: 0.01
+              max_value: 100000
+              config:
+                severity: warn
+                warn_if: ">50"
+      
+      - name: profit_margin_pct
+        description: Profit margin percentage
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.accepted_range:
+              min_value: -100
+              max_value: 1000
+              config:
+                severity: warn
+                warn_if: ">100"
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+              config:
+                severity: warn
+                warn_if: ">200"
+      
+      - name: price_tier
+        description: Price tier categorization
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['Budget', 'Mid-Range', 'Premium', 'Luxury']
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: price_category
+        description: Price category based on flags
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['LUXURY', 'CLEARANCE', 'STANDARD']
+              config:
+                severity: error
+      
+      - name: stock_quantity
+        description: Current stock quantity
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1000000
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: stock_status
+        description: Stock availability status
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['In Stock', 'Low Stock', 'Out of Stock', 'Discontinued']
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: is_available
+        description: Product is currently available for purchase
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+      
+      - name: is_out_of_stock
+        description: Product is currently out of stock
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+      
+      - name: is_low_stock
+        description: Product has low stock (1-9 units)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+      
+      - name: weight
+        description: Product weight in kg
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 10000
+              where: "weight IS NOT NULL"
+              config:
+                severity: warn
+                warn_if: ">50"
+      
+      - name: weight_category
+        description: Weight categorization
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['Unknown', 'Light (< 1 kg)', 'Medium (1-5 kg)', 'Heavy (5-25 kg)', 'Very Heavy (25+ kg)']
+              config:
+                severity: warn
+      
+      - name: launch_date
+        description: Product launch date
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_DATE + INTERVAL '1 year'"
+              where: "launch_date IS NOT NULL"
+              config:
+                severity: warn
+                warn_if: ">50"
+          - dbt_utils.expression_is_true:
+              expression: ">= '2020-01-01'"
+              where: "launch_date IS NOT NULL"
+              config:
+                severity: warn
+                warn_if: ">100"
+      
+      - name: days_since_launch
+        description: Days since product launch
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -365
+              max_value: 10000
+              where: "days_since_launch IS NOT NULL"
+              config:
+                severity: warn
+                warn_if: ">50"
+      
+      - name: product_maturity
+        description: Product maturity stage
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['Unknown', 'New (< 1 month)', 'Recent (1-3 months)', 'Current (< 1 year)', 'Established (1-2 years)', 'Mature (2+ years)']
+              config:
+                severity: warn
+      
+      - name: is_upcoming
+        description: Product has future launch date
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+      
+      - name: margin_tier
+        description: Profit margin tier categorization
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['Unknown', 'Low Margin (< 10%)', 'Moderate Margin (10-25%)', 'Good Margin (25-50%)', 'High Margin (50%+)']
+              config:
+                severity: warn
+      
+      - name: product_data_quality
+        description: Overall product data completeness indicator
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['COMPLETE', 'GOOD', 'BASIC']
+              config:
+                severity: error
+      
+      - name: bronze_loaded_at
+        description: When raw record was loaded from source
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: staging_loaded_at
+        description: When this record was loaded to staging
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_TIMESTAMP"
+              config:
+                severity: error
+      
+      - name: bronze_batch_id
+        description: Bronze layer batch identifier
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: staging_batch_id
+        description: Staging layer batch identifier
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: _source_system
+        description: Source system identifier
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['RETAIL_S3']
+              config:
+                severity: warn
+
+  - name: stg_stores
+    description: >
+      Staging table for stores with data quality filtering.
+      Filters out records with missing critical fields (store_name, city, state, zip_code, phone).
+      Enriches with geographic classifications and operational categorizations.
+    
+    config:
+      tags: ['staging', 'silver', 'stores']
+    
+    tests:
+      - dbt_utils.recency:
+          datepart: day
+          field: staging_loaded_at
+          interval: 2
+          config:
+            severity: warn
+    
+    columns:
+      - name: store_id
+        description: Unique store identifier
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: store_name
+        description: Store name (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: store_type
+        description: Store type classification
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['FLAGSHIP', 'MAIN', 'OUTLET', 'CLEARANCE', 'KIOSK', 'POP-UP', 'WAREHOUSE', 'STANDARD', 'EXPRESS', 'SUPERSTORE']
+              config:
+                severity: warn
+                warn_if: ">10"
+      
+      - name: manager
+        description: Store manager name
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">5"
+      
+      - name: store_address
+        description: Store street address
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: city
+        description: Store city (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: state
+        description: Store state (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+          - dbt_expectations.expect_column_value_lengths_to_equal:
+              value: 2
+              config:
+                severity: warn
+                warn_if: ">5"
+      
+      - name: zip_code
+        description: Store zip code (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+          - dbt_expectations.expect_column_value_lengths_to_be_between:
+              min_value: 5
+              max_value: 10
+              config:
+                severity: warn
+                warn_if: ">5"
+      
+      - name: full_address
+        description: Complete formatted address
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.not_empty_string:
+              config:
+                severity: warn
+      
+      - name: address_quality
+        description: Address consistency indicator
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['VALID', 'INCONSISTENT']
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "= 'VALID'"
+              config:
+                severity: warn
+                warn_if: ">5"
+      
+      - name: store_phone
+        description: Store phone number (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.not_empty_string:
+              config:
+                severity: error
+      
+      - name: opening_date
+        description: Store opening date (required in staging)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_DATE"
+              config:
+                severity: error
+                error_if: ">0"
+          - dbt_utils.expression_is_true:
+              expression: ">= '1950-01-01'"
+              config:
+                severity: warn
+                warn_if: ">3"
+      
+      - name: days_since_opening
+        description: Days since store opened
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 50000
+              config:
+                severity: warn
+      
+      - name: years_since_opening
+        description: Years since store opened
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              config:
+                severity: warn
+                warn_if: ">3"
+      
+      - name: store_age_category
+        description: Store age categorization
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['Brand New (< 1 year)', 'New (1-3 years)', 'Established (3-5 years)', 'Mature (5-10 years)', 'Legacy (10+ years)']
+              config:
+                severity: warn
+      
+      - name: store_maturity_tier
+        description: Store maturity tier
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['Unknown', 'Brand New', 'Growing', 'Established', 'Mature', 'Legacy']
+              config:
+                severity: warn
+      
+      - name: is_fully_operational
+        description: Store is fully operational
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "= TRUE"
+              config:
+                severity: warn
+                warn_if: ">3"
+      
+      - name: is_legacy_store
+        description: Store is considered legacy (very old)
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+      
+      - name: store_category
+        description: Store category classification
+        tests:
+          - not_null:
+              config:
+                severity: warn
+          - accepted_values:
+              values: ['Flagship', 'Outlet', 'Temporary', 'Warehouse', 'Standard']
+              config:
+                severity: warn
+      
+      - name: region
+        description: Geographic region
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['West', 'South', 'Northeast', 'Midwest', 'Other']
+              config:
+                severity: error
+      
+      - name: is_metro_area
+        description: Store is in a major metropolitan area
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: [true, false]
+              config:
+                severity: error
+      
+      - name: store_data_quality
+        description: Overall store data completeness indicator
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['COMPLETE', 'GOOD', 'BASIC']
+              config:
+                severity: error
+      
+      - name: bronze_loaded_at
+        description: When raw record was loaded from source
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: staging_loaded_at
+        description: When this record was loaded to staging
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - dbt_utils.expression_is_true:
+              expression: "<= CURRENT_TIMESTAMP"
+              config:
+                severity: error
+      
+      - name: bronze_batch_id
+        description: Bronze layer batch identifier
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      
+      - name: staging_batch_id
+        description: Staging layer batch identifier
+        tests:
+          - not_null:
+              config:
+                severity: error
+      
+      - name: _source_system
+        description: Source system identifier
+        tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ['RETAIL_S3']
+              config:
+                severity: warn
+
+tests:
+  - name: test_transaction_product_composite_key
+    description: Verify (transaction_id_clean, product_id) composite key is unique
+    
+  - name: test_has_promotion_matches_promotion_code
+    description: Verify has_promotion = TRUE when promotion_code is not NULL
+    
+  - name: test_is_refund_matches_refund_reason
+    description: Verify is_refund = TRUE when refund_reason is not NULL
+    
+  - name: test_discount_amount_calculation
+    description: Verify discount_amount = quantity * unit_price * (discount_percent/100)
+  
+  - name: test_email_uniqueness
+    description: Verify email addresses are unique (allows for NULL)
+    
+  - name: test_age_matches_dob
+    description: Verify age calculation matches date_of_birth
+    
+  - name: test_state_zip_consistency
+    description: Verify state matches state_code_from_zip when both exist
+    
+  - name: test_quality_tier_matches_issues_count
+    description: Verify quality_tier correctly categorizes based on quality_issues_count
+
+  - name: test_cost_not_exceeds_price
+    description: Verify cost_price does not exceed selling_price (allows for loss leaders)
+    
+  - name: test_profit_margin_calculation
+    description: Verify profit_margin_pct correctly calculated as ((selling_price - cost_price) / selling_price) * 100
+    
+  - name: test_stock_flags_consistency
+    description: Verify is_out_of_stock, is_low_stock, and is_available flags are mutually consistent
+    
+  - name: test_no_negative_stock
+    description: Verify stock_quantity is never negative
+    
+  - name: test_weight_category_matches_weight
+    description: Verify weight_category correctly categorizes based on weight value
+
+  - name: test_store_name_uniqueness
+    description: Verify store names are unique within the same city
+    
+  - name: test_years_matches_days_since_opening
+    description: Verify years_since_opening approximately matches days_since_opening / 365
+    
+  - name: test_region_matches_state
+    description: Verify region correctly categorizes based on state
+    
+  - name: test_no_future_opening_dates
+    description: Verify opening_date is not in the future
+    
+  - name: test_store_category_matches_store_type
+    description: Verify store_category correctly maps from store_type

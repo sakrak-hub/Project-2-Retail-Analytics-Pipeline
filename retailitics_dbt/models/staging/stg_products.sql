@@ -3,121 +3,136 @@
         materialized='incremental',
         unique_key='product_id',
         on_schema_change='fail',
-        tags=['staging', 'silver', 'products']
+        tags=['staging', 'incremental']
     )
 }}
 
-WITH bronze_source AS (
-    SELECT * 
-    FROM {{ ref('bronze_products') }}
+WITH source_data AS (
+    SELECT * FROM {{ ref('raw_products') }}
     
     {% if is_incremental() %}
-    WHERE _loaded_at > (SELECT MAX(bronze_loaded_at) FROM {{ this }})
+    WHERE NOT EXISTS (
+        SELECT 1 
+        FROM {{ this }} existing
+        WHERE existing.product_id = {{ ref('raw_products') }}.product_id
+          AND existing._row_hash = MD5(
+              COALESCE({{ ref('raw_products') }}.product_name, '') || '|' ||
+              COALESCE({{ ref('raw_products') }}.category, '') || '|' ||
+              COALESCE({{ ref('raw_products') }}.subcategory, '') || '|' ||
+              COALESCE(CAST({{ ref('raw_products') }}.price AS VARCHAR), '') || '|' ||
+              COALESCE(CAST({{ ref('raw_products') }}.cost AS VARCHAR), '') || '|' ||
+              COALESCE(CAST({{ ref('raw_products') }}.stock_quantity AS VARCHAR), '')
+          )
+    )
     {% endif %}
 ),
 
-filtered AS (
-    SELECT *
-    FROM bronze_source
-
-    WHERE
-        product_id IS NOT NULL
-        AND missing_product_name_flag = 0
-        AND invalid_price_flag = 0
-        AND invalid_cost_flag = 0
-        AND cost_exceeds_price_flag = 0
-        AND missing_category_flag = 0
-),
-
-staging_final AS (
+staging_cleaned AS (
     SELECT
         product_id,
-        product_name,
-        category,
-        subcategory,
-        brand,
-        sku,
-        supplier,
-        selling_price,
-        cost_price,
-        profit_margin_pct,
-        price_tier,
-        CASE 
-            WHEN very_high_price_flag = 1 THEN 'LUXURY'
-            WHEN very_low_price_flag = 1 THEN 'CLEARANCE'
-            ELSE 'STANDARD'
-        END AS price_category,
-        stock_quantity,
-        stock_status,
-        CASE 
-            WHEN stock_quantity > 0 THEN TRUE
-            ELSE FALSE
-        END AS is_available,
-        
-        CASE 
-            WHEN stock_quantity = 0 THEN TRUE
-            ELSE FALSE
-        END AS is_out_of_stock,
-        
-        CASE 
-            WHEN stock_quantity > 0 AND stock_quantity < 10 THEN TRUE
-            ELSE FALSE
-        END AS is_low_stock,
-
+        TRIM(REGEXP_REPLACE(product_name, '[^\x20-\x7E]', '', 'g')) AS product_name,
+        product_name AS product_name_raw,
+        TRIM(REGEXP_REPLACE(category, '[^\x20-\x7E]', '', 'g')) AS category,
+        TRIM(REGEXP_REPLACE(subcategory, '[^\x20-\x7E]', '', 'g')) AS subcategory,
+        TRIM(REGEXP_REPLACE(brand, '[^\x20-\x7E]', '', 'g')) AS brand,
+        TRIM(sku) AS sku,
+        ROUND(price,2) AS selling_price,
+        price AS selling_price_raw,
+        ROUND(cost,2) AS cost_price,
+        cost AS cost_price_raw,
         weight,
         dimensions,
-        CASE 
-            WHEN weight IS NULL THEN 'Unknown'
-            WHEN weight < 1 THEN 'Light (< 1 kg)'
-            WHEN weight < 5 THEN 'Medium (1-5 kg)'
-            WHEN weight < 25 THEN 'Heavy (5-25 kg)'
-            ELSE 'Very Heavy (25+ kg)'
-        END AS weight_category,
-        launch_date,
-        days_since_launch,
-
-        CASE 
-            WHEN days_since_launch IS NULL THEN 'Unknown'
-            WHEN days_since_launch < 30 THEN 'New (< 1 month)'
-            WHEN days_since_launch < 90 THEN 'Recent (1-3 months)'
-            WHEN days_since_launch < 365 THEN 'Current (< 1 year)'
-            WHEN days_since_launch < 730 THEN 'Established (1-2 years)'
-            ELSE 'Mature (2+ years)'
-        END AS product_maturity,
         
-        CASE 
-            WHEN future_launch_date_flag = 1 THEN TRUE
-            ELSE FALSE
-        END AS is_upcoming,
+        CASE
+            WHEN stock_quantity<0 THEN NULL
+            ELSE stock_quantity
+            END as stock_quantity,
+        stock_quantity AS stock_quantity_raw,
+
+        TRIM(REGEXP_REPLACE(supplier, '[^\x20-\x7E]', '', 'g')) AS supplier,
 
         CASE 
-            WHEN profit_margin_pct IS NULL THEN 'Unknown'
-            WHEN profit_margin_pct < 10 THEN 'Low Margin (< 10%)'
-            WHEN profit_margin_pct < 25 THEN 'Moderate Margin (10-25%)'
-            WHEN profit_margin_pct < 50 THEN 'Good Margin (25-50%)'
-            ELSE 'High Margin (50%+)'
-        END AS margin_tier,
-
-        CASE 
-            WHEN missing_sku_flag = 0 
-                AND missing_supplier_flag = 0 
-                AND missing_weight_flag = 0 
-                AND missing_dimensions_flag = 0 
-                AND missing_launch_date_flag = 0
-            THEN 'COMPLETE'
-            WHEN missing_sku_flag = 0 
-                AND missing_supplier_flag = 0
-            THEN 'GOOD'
-            ELSE 'BASIC'
-        END AS product_data_quality,
-
-        _loaded_at AS bronze_loaded_at,
-        CURRENT_TIMESTAMP AS staging_loaded_at,
-        _batch_id AS bronze_batch_id,
-        '{{ invocation_id }}' AS staging_batch_id,
-        _source_system
+            WHEN launch_date IS NULL OR TRIM(launch_date::VARCHAR)='' THEN NULL
+            ELSE TRY_CAST(launch_date AS DATE)
+            END as launch_date,
         
-    FROM filtered
+        CASE WHEN product_name IS NULL OR TRIM(product_name) = '' THEN 1 ELSE 0 END AS missing_product_name_flag,
+        CASE WHEN category IS NULL OR TRIM(category) = '' THEN 1 ELSE 0 END AS missing_category_flag,
+        CASE WHEN sku IS NULL OR TRIM(sku) = '' THEN 1 ELSE 0 END AS missing_sku_flag,
+        CASE WHEN supplier IS NULL OR TRIM(supplier) = '' THEN 1 ELSE 0 END AS missing_supplier_flag,
+
+        CASE WHEN stock_quantity < 0 THEN 1 ELSE 0 END AS negative_stock_quantity_flag,
+        CASE WHEN stock_quantity IS NULL THEN 1 ELSE 0 END AS missing_stock_quantity_flag,
+        CASE WHEN stock_quantity = 0 THEN 1 ELSE 0 END AS zero_stock_quantity_flag,
+
+        CASE WHEN price IS NULL OR price <= 0 THEN 1 ELSE 0 END AS invalid_price_flag,
+        CASE WHEN cost IS NULL OR cost < 0 THEN 1 ELSE 0 END AS invalid_cost_flag,
+        CASE WHEN cost > price THEN 1 ELSE 0 END AS cost_exceeds_price_flag,
+
+        CASE WHEN price > 10000 THEN 1 ELSE 0 END AS very_high_price_flag,
+        CASE WHEN price < 1.0 AND price > 0 THEN 1 ELSE 0 END AS very_low_price_flag,
+
+        CASE WHEN weight IS NULL THEN 1 ELSE 0 END AS missing_weight_flag,
+        CASE WHEN weight < 0.01 AND weight > 0 THEN 1 ELSE 0 END AS suspiciously_low_weight_flag,
+        CASE WHEN weight > 1000 THEN 1 ELSE 0 END AS very_high_weight_flag,
+
+        CASE WHEN dimensions IS NULL OR TRIM(dimensions::VARCHAR) = '' THEN 1 ELSE 0 END AS missing_dimensions_flag,
+
+        CASE WHEN launch_date IS NULL THEN 1 ELSE 0 END AS missing_launch_date_flag,
+        CASE 
+            WHEN TRY_CAST(launch_date AS DATE) > CURRENT_DATE THEN 1 
+            ELSE 0 
+        END AS future_launch_date_flag,
+
+        CASE 
+            WHEN price > 0 AND cost >= 0 THEN 
+                ROUND(((price - cost) / price) * 100, 2)
+            ELSE NULL
+        END AS profit_margin_pct,
+
+        CASE 
+            WHEN price >= 1000 THEN 'Premium'
+            WHEN price >= 100 THEN 'Mid-Range'
+            WHEN price >= 10 THEN 'Budget'
+            WHEN price > 0 THEN 'Economy'
+            ELSE 'Invalid'
+        END AS price_tier,
+
+        CASE 
+            WHEN stock_quantity IS NULL THEN 'Unknown'
+            WHEN stock_quantity = 0 THEN 'Out of Stock'
+            WHEN stock_quantity < 10 THEN 'Low Stock'
+            WHEN stock_quantity < 50 THEN 'Available'
+            ELSE 'In Stock'
+        END AS stock_status,
+
+        CASE 
+            WHEN TRY_CAST(launch_date AS DATE) IS NOT NULL 
+                AND TRY_CAST(launch_date AS DATE) <= CURRENT_DATE 
+            THEN DATE_DIFF('day', TRY_CAST(launch_date AS DATE), CURRENT_DATE)
+            ELSE NULL
+        END AS days_since_launch,
+
+        CURRENT_TIMESTAMP AS _loaded_at,
+        '{{ run_started_at }}' AS _batch_id,
+        '{{ var("source_system", "RETAIL_S3") }}' AS _source_system,
+
+        MD5(
+            COALESCE(product_name, '') || '|' ||
+            COALESCE(category, '') || '|' ||
+            COALESCE(subcategory, '') || '|' ||
+            COALESCE(brand, '') || '|' ||
+            COALESCE(CAST(price AS VARCHAR), '') || '|' ||
+            COALESCE(CAST(cost AS VARCHAR), '') || '|' ||
+            COALESCE(sku, '') || '|' ||
+            COALESCE(CAST(stock_quantity AS VARCHAR), '') || '|' ||
+            COALESCE(supplier, '') || '|' ||
+            COALESCE(CAST(launch_date AS VARCHAR), '')
+        ) AS _row_hash,
+
+        'raw_products' AS _source_table
+
+    FROM source_data
 )
 
-SELECT * FROM staging_final
+SELECT * FROM staging_cleaned

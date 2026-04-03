@@ -37,7 +37,7 @@ def dag_failure_callback(context):
     else:
         print(f"Retry {str(task_instance)}!")
 
-def check_bronze_quality_gate(**context):
+def check_staging_quality_gate(**context):
     
     ti = context['ti']
     db_path = '/opt/airflow/dbt/warehouse.duckdb'
@@ -53,20 +53,20 @@ def check_bronze_quality_gate(**context):
             duplicate_line_item_pct,
             health_status,
             quality_tier
-        FROM quality_db.bronze_transactions_profile
+        FROM quality_db.staging_transactions_profile
         """
         
         result = conn.execute(query).fetchone()
         
         if not result:
             logger.error("❌ No profile data found for today")
-            raise ValueError("No bronze profile data available")
+            raise ValueError("No staging profile data available")
         
         (total_lines, unique_combos, avg_items, score, 
          dup_pct, health, tier) = result
         
         logger.info("="*60)
-        logger.info("BRONZE QUALITY GATE CHECK")
+        logger.info("staging QUALITY GATE CHECK")
         logger.info("="*60)
         logger.info(f"Total Line Items:              {total_lines:,}")
         logger.info(f"Unique (txn, product) Combos:  {unique_combos:,}")
@@ -77,39 +77,39 @@ def check_bronze_quality_gate(**context):
         logger.info(f"Quality Tier:                  {tier}")
         logger.info("")
         
-        BRONZE_MIN_QUALITY_SCORE = 70.0
-        BRONZE_MAX_DUPLICATE_PCT = 30.0
-        BRONZE_MIN_AVG_ITEMS = 1.0
-        BRONZE_MAX_AVG_ITEMS = 5.0
+        staging_MIN_QUALITY_SCORE = 70.0
+        staging_MAX_DUPLICATE_PCT = 30.0
+        staging_MIN_AVG_ITEMS = 1.0
+        staging_MAX_AVG_ITEMS = 5.0
         
-        ti.xcom_push(key='bronze_quality_score', value=float(score))
-        ti.xcom_push(key='bronze_duplicate_pct', value=float(dup_pct))
-        ti.xcom_push(key='bronze_total_lines', value=int(total_lines))
-        ti.xcom_push(key='bronze_health_status', value=health)
-        ti.xcom_push(key='bronze_quality_tier', value=tier)
+        ti.xcom_push(key='staging_quality_score', value=float(score))
+        ti.xcom_push(key='staging_duplicate_pct', value=float(dup_pct))
+        ti.xcom_push(key='staging_total_lines', value=int(total_lines))
+        ti.xcom_push(key='staging_health_status', value=health)
+        ti.xcom_push(key='staging_quality_tier', value=tier)
 
         passed = (
-            score >= BRONZE_MIN_QUALITY_SCORE and
-            dup_pct <= BRONZE_MAX_DUPLICATE_PCT and
-            avg_items >= BRONZE_MIN_AVG_ITEMS and
-            avg_items <= BRONZE_MAX_AVG_ITEMS
+            score >= staging_MIN_QUALITY_SCORE and
+            dup_pct <= staging_MAX_DUPLICATE_PCT and
+            avg_items >= staging_MIN_AVG_ITEMS and
+            avg_items <= staging_MAX_AVG_ITEMS
         )
         
         if passed:
             logger.info("✅ QUALITY GATE PASSED")
-            logger.info(f"   Quality Score: {score:.1f} >= {BRONZE_MIN_QUALITY_SCORE}")
-            logger.info(f"   Duplicates: {dup_pct}% <= {BRONZE_MAX_DUPLICATE_PCT}%")
-            logger.info(f"   Avg Items/Txn: {avg_items} in [{BRONZE_MIN_AVG_ITEMS}, {BRONZE_MAX_AVG_ITEMS}]")
+            logger.info(f"   Quality Score: {score:.1f} >= {staging_MIN_QUALITY_SCORE}")
+            logger.info(f"   Duplicates: {dup_pct}% <= {staging_MAX_DUPLICATE_PCT}%")
+            logger.info(f"   Avg Items/Txn: {avg_items} in [{staging_MIN_AVG_ITEMS}, {staging_MAX_AVG_ITEMS}]")
             logger.info("="*60)
             logger.info("🚀 Continuing to Silver layer")
             return 'trigger_data_staging'
         else:
             logger.error("❌ QUALITY GATE FAILED")
-            if score < BRONZE_MIN_QUALITY_SCORE:
-                logger.error(f"   Quality too low: {score:.1f} < {BRONZE_MIN_QUALITY_SCORE}")
-            if dup_pct > BRONZE_MAX_DUPLICATE_PCT:
-                logger.error(f"   Too many duplicates: {dup_pct}% > {BRONZE_MAX_DUPLICATE_PCT}%")
-            if avg_items < BRONZE_MIN_AVG_ITEMS or avg_items > BRONZE_MAX_AVG_ITEMS:
+            if score < staging_MIN_QUALITY_SCORE:
+                logger.error(f"   Quality too low: {score:.1f} < {staging_MIN_QUALITY_SCORE}")
+            if dup_pct > staging_MAX_DUPLICATE_PCT:
+                logger.error(f"   Too many duplicates: {dup_pct}% > {staging_MAX_DUPLICATE_PCT}%")
+            if avg_items < staging_MIN_AVG_ITEMS or avg_items > staging_MAX_AVG_ITEMS:
                 logger.error(f"   Unusual grain: {avg_items} items/txn")
             logger.info("="*60)
             
@@ -119,11 +119,11 @@ def check_bronze_quality_gate(**context):
         conn.close()
 
 
-def run_bronze_with_schema_detection(**context):
+def run_staging_with_schema_detection(**context):
 
     ti = context['ti']
     
-    cmd = "cd /opt/airflow/dbt && dbt run --select bronze --profiles-dir /opt/airflow/dbt"
+    cmd = "cd /opt/airflow/dbt && dbt run --select staging --profiles-dir /opt/airflow/dbt"
     
     result = subprocess.run(
         cmd,
@@ -144,21 +144,21 @@ def run_bronze_with_schema_detection(**context):
         logger.warning("🔄 SCHEMA CHANGE DETECTED - Branching to reconciliation")
         ti.xcom_push(key='schema_change_detected', value=True)
         ti.xcom_push(key='schema_change_time', value=str(context['logical_date']))
-        return 'schema_reconcile_bronze'
+        return 'schema_reconcile_staging'
     
     if result.returncode == 0:
-        logger.info("✅ Bronze run successful")
+        logger.info("✅ staging run successful")
         ti.xcom_push(key='schema_change_detected', value=False)
         return 'continue_pipeline'
 
-    logger.error(f"Bronze run failed: {output}")
-    raise ValueError("Bronze run failed")
+    logger.error(f"staging run failed: {output}")
+    raise ValueError("staging run failed")
 
-def reconcile_bronze_schema(**context):
+def reconcile_staging_schema(**context):
 
     logger.info("🔧 Running schema reconciliation (full_refresh)")
     
-    cmd = "cd /opt/airflow/dbt && dbt run --select bronze --full-refresh --profiles-dir /opt/airflow/dbt"
+    cmd = "cd /opt/airflow/dbt && dbt run --select staging --full-refresh --profiles-dir /opt/airflow/dbt"
     
     result = subprocess.run(
         cmd,
@@ -180,7 +180,7 @@ def log_schema_change(**context):
     ti = context['ti']
     
     schema_change = ti.xcom_pull(
-        task_ids='run_bronze_with_detection',
+        task_ids='run_staging_with_detection',
         key='schema_change_detected'
     )
     
@@ -188,7 +188,7 @@ def log_schema_change(**context):
         return 
     
     schema_time = ti.xcom_pull(
-        task_ids='run_bronze_with_detection',
+        task_ids='run_staging_with_detection',
         key='schema_change_time'
     )
 
@@ -221,7 +221,7 @@ def log_schema_change(**context):
             INSERT INTO retail_transactions_data.schema_change_log 
             (log_id, model_name, detected_at, reconciliation_method, reconciliation_status, dag_run_id)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, [next_id, 'bronze_transactions', schema_time, 'full_refresh', 'completed', dag_run_id])
+        """, [next_id, 'stg_transactions', schema_time, 'full_refresh', 'completed', dag_run_id])
         
         logger.info("✅ Schema change logged to database")
     
@@ -307,20 +307,20 @@ with DAG(
         bash_command='cd /opt/airflow/dbt && dbt test --select source:* --profiles-dir /opt/airflow/dbt'
     )
 
-    bronze_layer_start = EmptyOperator(task_id='bronze_layer_start')
+    staging_layer_start = EmptyOperator(task_id='staging_layer_start')
 
-    dbt_run_bronze_with_detection = BranchPythonOperator(
-        task_id='run_bronze_with_detection',
-        python_callable=run_bronze_with_schema_detection
+    dbt_run_staging_with_detection = BranchPythonOperator(
+        task_id='run_staging_with_detection',
+        python_callable=run_staging_with_schema_detection
     )
 
     continue_pipeline = EmptyOperator(
         task_id='continue_pipeline'
     )
 
-    schema_reconcile_bronze = PythonOperator(
-        task_id='schema_reconcile_bronze',
-        python_callable=reconcile_bronze_schema
+    schema_reconcile_staging = PythonOperator(
+        task_id='schema_reconcile_staging',
+        python_callable=reconcile_staging_schema
     )
 
     log_schema_change_task = PythonOperator(
@@ -328,20 +328,20 @@ with DAG(
         python_callable=log_schema_change
     )
 
-    dbt_test_bronze = BashOperator(
-        task_id='dbt_test_bronze',
-        bash_command='cd /opt/airflow/dbt && dbt test --select bronze --profiles-dir /opt/airflow/dbt',
+    dbt_test_staging = BashOperator(
+        task_id='dbt_test_staging',
+        bash_command='cd /opt/airflow/dbt && dbt test --select staging --profiles-dir /opt/airflow/dbt',
         trigger_rule='none_failed_min_one_success'
     )
 
-    dbt_create_bronze_profile = BashOperator(
-        task_id='dbt_create_bronze_profile',
-        bash_command='cd /opt/airflow/dbt && dbt run --select bronze_transactions_profile --profiles-dir /opt/airflow/dbt'
+    dbt_create_staging_profile = BashOperator(
+        task_id='dbt_create_staging_profile',
+        bash_command='cd /opt/airflow/dbt && dbt run --select staging_transactions_profile --profiles-dir /opt/airflow/dbt'
     )
 
-    bronze_quality_gate = BranchPythonOperator(
-        task_id='bronze_quality_gate',
-        python_callable=check_bronze_quality_gate,
+    staging_quality_gate = BranchPythonOperator(
+        task_id='staging_quality_gate',
+        python_callable=check_staging_quality_gate,
     )
 
     trigger_staging = TriggerDagRunOperator(
@@ -351,15 +351,15 @@ with DAG(
         poke_interval=60,
         logical_date = "{{ dag_run.logical_date }}",
         conf={
-            'triggered_by': 'bronze_quality_gate',
+            'triggered_by': 'staging_quality_gate',
             'logical_date': '{{ logical_date }}',
             "target_start_date": "{{ ds }}",
-            'bronze_run_id': '{{ run_id }}',
-            'bronze_quality_score': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_quality_score") }}',
-            'bronze_duplicate_pct': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_duplicate_pct") }}',
-            'bronze_total_lines': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_total_lines") }}',
-            'bronze_health_status': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_health_status") }}',
-            'bronze_quality_tier': '{{ ti.xcom_pull(task_ids="bronze_quality_gate", key="bronze_quality_tier") }}'
+            'staging_run_id': '{{ run_id }}',
+            'staging_quality_score': '{{ ti.xcom_pull(task_ids="staging_quality_gate", key="staging_quality_score") }}',
+            'staging_duplicate_pct': '{{ ti.xcom_pull(task_ids="staging_quality_gate", key="staging_duplicate_pct") }}',
+            'staging_total_lines': '{{ ti.xcom_pull(task_ids="staging_quality_gate", key="staging_total_lines") }}',
+            'staging_health_status': '{{ ti.xcom_pull(task_ids="staging_quality_gate", key="staging_health_status") }}',
+            'staging_quality_tier': '{{ ti.xcom_pull(task_ids="staging_quality_gate", key="staging_quality_tier") }}'
         },
 
         allowed_states=['success'],
@@ -379,19 +379,17 @@ with DAG(
 
     raw_layer_start >> dbt_seed >> dbt_seed_column_rename >> dbt_run_raw >> dbt_test_raw_sources
 
-    dbt_test_raw_sources >> bronze_layer_start
+    dbt_test_raw_sources >> staging_layer_start
 
-    bronze_layer_start >> dbt_run_bronze_with_detection 
+    staging_layer_start >> dbt_run_staging_with_detection 
 
-    dbt_run_bronze_with_detection >> [continue_pipeline, schema_reconcile_bronze]
+    dbt_run_staging_with_detection >> [continue_pipeline, schema_reconcile_staging]
 
-    schema_reconcile_bronze >> log_schema_change_task >> dbt_test_bronze
+    schema_reconcile_staging >> log_schema_change_task >> dbt_test_staging
     
-    continue_pipeline >> dbt_test_bronze >> dbt_create_bronze_profile >> bronze_quality_gate 
-
-    # bronze_quality_gate >> pipeline_complete
+    continue_pipeline >> dbt_test_staging >> dbt_create_staging_profile >> staging_quality_gate 
     
-    bronze_quality_gate >> [trigger_staging, skip_staging]
+    staging_quality_gate >> [trigger_staging, skip_staging]
 
     trigger_staging >> pipeline_complete
 
@@ -406,25 +404,19 @@ with DAG(
    - Create raw views/tables
    - Test source data (validates incoming data)
 
-2. **Bronze Layer**
-   - Create bronze tables (with quality flags)
-   - Test bronze data (validates transformations)
+2. **Staging Layer**
+   - Create staging tables (with quality flags)
+   - Test staging data (validates transformations)
    - Create quality profile (aggregate metrics)
    - Check quality gate (≥70% score, ≤5% duplicates)
 
-3. **Silver Layer** (only if quality gate passes)
-   - Create staging tables (filtered & enriched)
+3. **Intermediate Layer** (only if quality gate passes)
+   - Create Intermediate tables (filtered & enriched)
    - (To be implemented)
-
-## Quality Gates
-
-- **Bronze:** Score ≥ 70, Duplicates ≤ 5%, Avg items/txn in [1, 5]
-- **Silver:** (To be implemented)
-- **Gold:** (To be implemented)
 
 ## Monitoring
 
 - Check Airflow logs for quality metrics
-- Query `bronze_transactions_profile` for trending
+- Query `staging_transactions_profile` for trending
 - Set up alerts on `quality_alert_flag`
 """

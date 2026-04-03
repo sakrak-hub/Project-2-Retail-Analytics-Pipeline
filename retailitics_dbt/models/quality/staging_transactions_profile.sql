@@ -6,150 +6,159 @@
     )
 }}
 
-WITH revenue_summed AS(
-    SELECT
-        *,
-        CASE 
-                WHEN ROW_NUMBER() OVER (PARTITION BY transaction_id ORDER BY product_id) = 1 
-                THEN total_amount 
-                ELSE 0 
-        END as deduped_revenue
-    
-    FROM {{ ref('stg_transactions') }}
-),
-
-staging_daily AS (
+WITH line_items_with_duplicate_flag AS (
     SELECT 
-        DATE_TRUNC('day', staging_processed_at) AS profile_date,
+        *,
+        COUNT(*) OVER (
+            PARTITION BY transaction_id_clean, product_id
+        ) AS occurrences,
         
-        COUNT(*) AS total_line_items,
-        COUNT(DISTINCT line_item_key) AS unique_line_items,
-        COUNT(DISTINCT transaction_id) AS unique_transactions,
-        COUNT(DISTINCT customer_id) AS unique_customers,
-        COUNT(DISTINCT product_id) AS unique_products_sold,
-        COUNT(DISTINCT store_id) AS unique_stores,
+        ROW_NUMBER() OVER (
+            PARTITION BY transaction_id_clean 
+            ORDER BY product_id
+        ) AS transaction_line_number
         
-        ROUND(COUNT(*) * 1.0 / COUNT(DISTINCT transaction_id), 2) AS avg_items_per_transaction,
-        
-        SUM(CASE WHEN data_quality_status = 'CLEAN' THEN 1 ELSE 0 END) AS clean_records,
-        SUM(CASE WHEN data_quality_status = 'CORRECTED' THEN 1 ELSE 0 END) AS corrected_records,
-        SUM(CASE WHEN data_quality_status = 'INCOMPLETE' THEN 1 ELSE 0 END) AS incomplete_records, 
-        
-        ROUND(SUM(CASE WHEN data_quality_status = 'CLEAN' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS clean_pct,
-        ROUND(SUM(CASE WHEN data_quality_status = 'CORRECTED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS corrected_pct,
-
-        SUM(line_total_clean) AS total_line_item_revenue,
-        AVG(line_total_clean) AS avg_line_item_value,
-        SUM(quantity_clean) AS total_quantity_sold,
-        AVG(quantity_clean) AS avg_quantity_per_line,
-        
-        SUM(deduped_revenue) AS total_transaction_revenue,
-        
-        SUM(CASE WHEN is_refund THEN 1 ELSE 0 END) AS refund_line_items,
-        SUM(CASE WHEN has_promotion THEN 1 ELSE 0 END) AS promotion_line_items,
-        SUM(CASE WHEN has_discount THEN 1 ELSE 0 END) AS discount_line_items,
-        SUM(CASE WHEN is_bulk_purchase THEN 1 ELSE 0 END) AS bulk_purchase_line_items,
-        SUM(CASE WHEN is_high_value_item THEN 1 ELSE 0 END) AS high_value_line_items,
-        
-        ROUND(SUM(CASE WHEN is_refund THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS refund_pct,
-        ROUND(SUM(CASE WHEN has_promotion THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS promotion_pct,
-        
-        SUM(CASE WHEN transaction_type = 'Regular Sale' THEN 1 ELSE 0 END) AS regular_sale_items,
-        SUM(CASE WHEN transaction_type = 'Discounted' THEN 1 ELSE 0 END) AS discounted_items,
-        SUM(CASE WHEN transaction_type LIKE '%Promotion%' THEN 1 ELSE 0 END) AS promotional_items,
-        SUM(CASE WHEN transaction_type = 'Refund' THEN 1 ELSE 0 END) AS refund_items,
-        
-        SUM(CASE WHEN is_weekend THEN 1 ELSE 0 END) AS weekend_transactions,
-        ROUND(SUM(CASE WHEN is_weekend THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS weekend_pct,
-        
-        SUM(CASE WHEN time_of_day LIKE '%Morning%' THEN 1 ELSE 0 END) AS morning_transactions,
-        SUM(CASE WHEN time_of_day LIKE '%Afternoon%' THEN 1 ELSE 0 END) AS afternoon_transactions,
-        SUM(CASE WHEN time_of_day LIKE '%Evening%' THEN 1 ELSE 0 END) AS evening_transactions,
-        
-        AVG(discount_percent) AS avg_discount_percent,
-        SUM(discount_amount) AS total_discount_amount,
-        
-        COUNT(DISTINCT payment_method) AS unique_payment_methods,
-        
-        SUM(CASE WHEN earned_loyalty_points THEN 1 ELSE 0 END) AS transactions_with_loyalty_points,
-        SUM(loyalty_points_earned) AS total_loyalty_points_earned,
-        
-        GREATEST(0, 
-            100 
-            - (SUM(CASE WHEN data_quality_status = 'CORRECTED' THEN 1 ELSE 0 END) * 5.0 / COUNT(*))
-            - (SUM(CASE WHEN data_quality_status = 'INCOMPLETE' THEN 1 ELSE 0 END) * 10.0 / COUNT(*))
-            - (SUM(CASE WHEN is_refund THEN 1 ELSE 0 END) * 2.0 / COUNT(*))
-        ) AS transaction_staging_quality_score
-        
-    FROM revenue_summed
+    FROM {{ ref('stg_transactions') }}
     
     {% if is_incremental() %}
     WHERE DATE_TRUNC('day', staging_processed_at) > (SELECT MAX(profile_date) FROM {{ this }})
     {% endif %}
+),
+
+transactions_daily AS (
+    SELECT 
+        DATE_TRUNC('day', staging_processed_at) AS profile_date,
+        MAX(transaction_date) AS date_to_process,
+        COUNT(*) AS total_line_items,
+        COUNT(DISTINCT CONCAT(transaction_id_clean, '|', product_id)) AS unique_txn_product_combinations,
+        COUNT(DISTINCT transaction_id_clean) AS unique_transactions,
+        COUNT(DISTINCT customer_id) AS unique_customers,
+        COUNT(DISTINCT product_id) AS unique_products_sold,
+        COUNT(DISTINCT store_id) AS unique_stores,
+
+        ROUND(COUNT(*) * 1.0 / COUNT(DISTINCT transaction_id_clean), 2) AS avg_line_items_per_transaction,
+
+        SUM(
+            CASE 
+                WHEN occurrences > 1 THEN 1 
+                ELSE 0 
+            END
+        ) AS duplicate_txn_product_line_items,
+
+        SUM(missing_transaction_id_flag) AS missing_transaction_id_clean_count,
+        SUM(missing_date_flag) AS missing_date_count,
+        SUM(missing_customer_id_flag) AS missing_customer_id_count,
+        SUM(missing_product_id_flag) AS missing_product_id_count,
+
+        ROUND(SUM(missing_transaction_id_flag) * 100.0 / COUNT(*), 2) AS missing_txn_id_pct,
+        ROUND(SUM(missing_date_flag) * 100.0 / COUNT(*), 2) AS missing_date_pct,
+        ROUND(SUM(missing_customer_id_flag) * 100.0 / COUNT(*), 2) AS missing_customer_pct,
+        ROUND(SUM(missing_product_id_flag) * 100.0 / COUNT(*), 2) AS missing_product_pct,
+
+        SUM(negative_quantity_flag) AS negative_quantity_count,
+        SUM(negative_amount_flag) AS negative_amount_count,
+        SUM(zero_total_amount_flag) AS zero_total_count,
+        SUM(zero_quantity_flag) AS zero_quantity_count,
+        SUM(high_unit_price_flag) AS high_unit_price_count,
+
+        ROUND(SUM(negative_quantity_flag) * 100.0 / COUNT(*), 2) AS negative_quantity_pct,
+        ROUND(SUM(zero_total_amount_flag) * 100.0 / COUNT(*), 2) AS zero_total_pct,
+
+        SUM(line_total) AS total_line_item_revenue,
+        AVG(line_total) AS avg_line_item_value,
+        SUM(quantity) AS total_quantity_sold,
+        AVG(quantity) AS avg_quantity_per_line,
+
+        SUM(
+            CASE 
+                WHEN transaction_line_number = 1 
+                THEN total_amount 
+                ELSE 0 
+            END
+        ) AS total_transaction_revenue,
+
+        SUM(CASE WHEN is_refund = TRUE THEN 1 ELSE 0 END) AS refund_line_items,
+        SUM(CASE WHEN has_promotion = TRUE THEN 1 ELSE 0 END) AS promotion_line_items,
+        SUM(CASE WHEN quantity < 0 THEN 1 ELSE 0 END) AS negative_quantity_lines,
+
+        GREATEST(0, 
+            100 
+            - (SUM(missing_transaction_id_flag) * 100.0 / COUNT(*))  
+            - (SUM(missing_date_flag) * 100.0 / COUNT(*))            
+            - (SUM(missing_product_id_flag) * 100.0 / COUNT(*))      
+            - (SUM(negative_quantity_flag) * 100.0 / COUNT(*) * 0.5) 
+            - (SUM(zero_total_amount_flag) * 100.0 / COUNT(*) * 0.5)
+        ) AS line_item_quality_score
     
-    GROUP BY DATE_TRUNC('day', staging_processed_at)
+    FROM line_items_with_duplicate_flag
+    
+    GROUP BY DATE_TRUNC('day',staging_processed_at), transaction_date
 ),
 
 profile_enriched AS (
     SELECT 
         *,
-        
         CASE 
-            WHEN total_line_items = unique_line_items THEN 'Perfect - No Duplicates'
-            WHEN total_line_items > unique_line_items THEN 'WARNING - Duplicates Found'
-            ELSE 'Unknown'
-        END AS deduplication_status,
-        
+            WHEN total_line_items = unique_txn_product_combinations THEN 'Clean - No Duplicates'
+            WHEN duplicate_txn_product_line_items = 0 THEN 'Clean - No Duplicates'
+            WHEN duplicate_txn_product_line_items < total_line_items * 0.01 THEN 'Good - <1% Duplicates'
+            WHEN duplicate_txn_product_line_items < total_line_items * 0.05 THEN 'Fair - <5% Duplicates'
+            ELSE 'Poor - 5%+ Duplicates'
+        END AS line_item_grain_health,
+
         CASE 
-            WHEN avg_items_per_transaction BETWEEN 1.5 AND 3.0 THEN 'Healthy - Normal Distribution'
-            WHEN avg_items_per_transaction < 1.5 THEN 'Low - Few Multi-Item Transactions'
+            WHEN avg_line_items_per_transaction BETWEEN 1.5 AND 3.0 THEN 'Healthy - Normal Distribution'
+            WHEN avg_line_items_per_transaction < 1.5 THEN 'Low - Few Multi-Item Transactions'
             ELSE 'High - Many Multi-Item Transactions'
         END AS transaction_size_health,
-        
+
         CASE 
-            WHEN transaction_staging_quality_score >= 98 THEN 'Excellent'
-            WHEN transaction_staging_quality_score >= 95 THEN 'Good'
-            WHEN transaction_staging_quality_score >= 90 THEN 'Fair'
-            ELSE 'Needs Review'
+            WHEN line_item_quality_score >= 95 THEN 'Excellent'
+            WHEN line_item_quality_score >= 90 THEN 'Good'
+            WHEN line_item_quality_score >= 80 THEN 'Fair'
+            WHEN line_item_quality_score >= 70 THEN 'Poor'
+            ELSE 'Critical'
         END AS health_status,
-        
+
         CASE 
-            WHEN clean_pct >= 95 THEN 'HIGH_QUALITY'
-            WHEN clean_pct >= 90 THEN 'GOOD_QUALITY'
-            WHEN clean_pct >= 85 THEN 'ACCEPTABLE_QUALITY'
-            ELSE 'NEEDS_IMPROVEMENT'
+            WHEN missing_txn_id_pct = 0 
+                AND missing_date_pct = 0 
+                AND missing_product_pct = 0
+                AND negative_quantity_pct < 1 
+            THEN 'CLEAN'
+            WHEN missing_txn_id_pct < 5 
+                AND missing_date_pct < 5 
+                AND missing_product_pct < 5
+                AND negative_quantity_pct < 5 
+            THEN 'ACCEPTABLE'
+            ELSE 'POOR'
         END AS quality_tier,
-        
+
         CASE 
-            WHEN refund_pct > 10 THEN 'HIGH_REFUNDS'
-            WHEN refund_pct > 5 THEN 'ELEVATED_REFUNDS'
-            ELSE 'NORMAL_REFUNDS'
-        END AS refund_health,
-        
-        CASE 
-            WHEN promotion_pct > 40 THEN 'HEAVY_PROMOTIONS'
-            WHEN promotion_pct > 20 THEN 'MODERATE_PROMOTIONS'
-            ELSE 'LOW_PROMOTIONS'
-        END AS promotion_intensity,
-        
-        CASE 
-            WHEN transaction_staging_quality_score < 90 THEN TRUE
-            WHEN clean_pct < 90 THEN TRUE
-            WHEN refund_pct > 10 THEN TRUE
-            WHEN total_line_items < 1000 THEN TRUE  -- Unusually low volume
+            WHEN line_item_quality_score < 70 THEN TRUE
+            WHEN missing_txn_id_pct > 10 THEN TRUE
+            WHEN missing_date_pct > 10 THEN TRUE
+            WHEN missing_product_pct > 10 THEN TRUE 
+            WHEN duplicate_txn_product_line_items > total_line_items * 0.1 THEN TRUE 
             ELSE FALSE
         END AS quality_alert_flag,
-        
+
         CASE 
             WHEN total_line_items = 0 THEN NULL
-            ELSE ROUND((unique_line_items * 100.0 / total_line_items), 2)
-        END AS deduplication_success_pct,
-        
+            WHEN unique_transactions = 0 THEN NULL
+            ELSE ROUND(total_line_items * 1.0 / unique_transactions, 2)
+        END AS actual_line_items_per_txn_ratio,
+
+        CASE 
+            WHEN total_line_items = 0 THEN NULL
+            ELSE ROUND(duplicate_txn_product_line_items * 100.0 / total_line_items, 2)
+        END AS duplicate_line_item_pct,
+
         CURRENT_TIMESTAMP AS profile_created_at,
-        'transaction' AS entity_type,
+        '{{ var("source_system", "RETAIL_S3") }}' AS source_system,
         'line_item' AS grain_level
         
-    FROM staging_daily
+    FROM transactions_daily
 )
 
 SELECT * FROM profile_enriched

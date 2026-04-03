@@ -3,121 +3,159 @@
         materialized='incremental',
         unique_key='store_id',
         on_schema_change='fail',
-        tags=['staging', 'silver', 'stores']
+        tags=['staging', 'incremental']
     )
 }}
 
-WITH bronze_source AS (
-    SELECT * 
-    FROM {{ ref('bronze_stores') }}
+WITH source_data AS (
+    SELECT * FROM {{ ref('raw_stores') }}
     
     {% if is_incremental() %}
-    WHERE _loaded_at > (SELECT MAX(bronze_loaded_at) FROM {{ this }})
+    WHERE NOT EXISTS (
+        SELECT 1 
+        FROM {{ this }} existing
+        WHERE existing.store_id = {{ ref('raw_stores') }}.store_id
+          AND existing._row_hash = MD5(
+              COALESCE({{ ref('raw_stores') }}.store_name, '') || '|' ||
+              COALESCE({{ ref('raw_stores') }}.address, '') || '|' ||
+              COALESCE({{ ref('raw_stores') }}.city, '') || '|' ||
+              COALESCE({{ ref('raw_stores') }}.state, '') || '|' ||
+              COALESCE(CAST({{ ref('raw_stores') }}.zip_code AS VARCHAR), '') || '|' ||
+              COALESCE({{ ref('raw_stores') }}.phone, '') || '|' ||
+              COALESCE({{ ref('raw_stores') }}.manager, '') || '|' ||
+              COALESCE({{ ref('raw_stores') }}.store_type, '')
+          )
+    )
     {% endif %}
 ),
 
-filtered AS (
-    SELECT *
-    FROM bronze_source
-
-    WHERE
-        store_id IS NOT NULL
-        AND missing_store_name_flag = 0
-        AND missing_city_flag = 0
-        AND missing_state_flag = 0
-        AND missing_zip_code_flag = 0
-        AND missing_phone_flag = 0
-        AND phone_too_short_flag = 0
-        AND missing_opening_date_flag = 0
-        AND future_opening_date_flag = 0
-),
-
-staging_final AS (
+staging_cleaned AS (
     SELECT
         store_id,
-        store_name,
-        store_type,
-        manager,
-        store_address,
-        city,
-        state,
-        zip_code,
-        store_address || ', ' || city || ', ' || state || ' ' || zip_code AS full_address,
-        CASE 
-            WHEN address_city_mismatch_flag = 1 
-                OR address_state_mismatch_flag = 1 
-                OR address_zip_mismatch_flag = 1 
-            THEN 'INCONSISTENT'
-            ELSE 'VALID'
-        END AS address_quality,
-
-        store_phone,
-        opening_date,
-        days_since_opening,
-        years_since_opening,
-        store_age_category,
+        TRIM(REGEXP_REPLACE(store_name, '[^\x20-\x7E]', '', 'g')) AS store_name,
+        store_name AS store_name_raw,
 
         CASE 
-            WHEN years_since_opening IS NULL THEN 'Unknown'
-            WHEN years_since_opening < 1 THEN 'Brand New'
-            WHEN years_since_opening < 3 THEN 'Growing'
-            WHEN years_since_opening < 5 THEN 'Established'
-            WHEN years_since_opening < 10 THEN 'Mature'
-            ELSE 'Legacy'
-        END AS store_maturity_tier,
+                WHEN address IS NULL OR TRIM(address) = '' THEN NULL
+                WHEN POSITION(E'\n' IN address) > 0 THEN 
+                    TRIM(SPLIT_PART(address, E'\n', 1))
+                WHEN POSITION(',' IN address) > 0 THEN 
+                    TRIM(SPLIT_PART(address, ',', 1))
+                ELSE TRIM(address)
+            END AS store_address,
+        address AS store_address_raw,
 
-        is_fully_operational,
+        TRIM(REGEXP_REPLACE(city, '[^\x20-\x7E]', '', 'g')) AS city,
+        TRIM(REGEXP_REPLACE(state, '[^\x20-\x7E]', '', 'g')) AS state,
+        TRIM(zip_code) AS zip_code,
+
+        REGEXP_REPLACE(phone, '[^0-9x+()-]', '', 'g') AS store_phone,
+        
+        phone AS store_phone_raw,
+
+        TRIM(manager) AS manager,
+        UPPER(TRIM(store_type)) AS store_type,
+        CASE 
+                WHEN opening_date IS NULL OR TRIM(opening_date::VARCHAR)='' THEN NULL
+                ELSE TRY_CAST(opening_date AS DATE)
+                END as opening_date,
         
         CASE 
-            WHEN very_old_store_flag = 1 THEN TRUE
-            ELSE FALSE
-        END AS is_legacy_store,
+            WHEN TRY_CAST(opening_date AS DATE) IS NOT NULL 
+                AND TRY_CAST(opening_date AS DATE) <= CURRENT_DATE 
+            THEN DATE_DIFF('day', TRY_CAST(opening_date AS DATE), CURRENT_DATE)
+            ELSE NULL
+        END AS days_since_opening,
 
         CASE 
-            WHEN store_type IN ('FLAGSHIP', 'MAIN') THEN 'Flagship'
-            WHEN store_type IN ('OUTLET', 'CLEARANCE') THEN 'Outlet'
-            WHEN store_type IN ('KIOSK', 'POP-UP') THEN 'Temporary'
-            WHEN store_type = 'WAREHOUSE' THEN 'Warehouse'
-            ELSE 'Standard'
-        END AS store_category,
+            WHEN TRY_CAST(opening_date AS DATE) IS NOT NULL 
+                AND TRY_CAST(opening_date AS DATE) <= CURRENT_DATE 
+            THEN ROUND(DATE_DIFF('day', TRY_CAST(opening_date AS DATE), CURRENT_DATE) / 365.25, 0)
+            ELSE NULL
+        END AS years_since_opening,
 
         CASE 
-            WHEN state IN ('CA', 'OR', 'WA', 'NV', 'AZ') THEN 'West'
-            WHEN state IN ('TX', 'OK', 'AR', 'LA', 'MS', 'AL', 'TN', 'KY') THEN 'South'
-            WHEN state IN ('NY', 'NJ', 'PA', 'CT', 'MA', 'VT', 'NH', 'ME', 'RI') THEN 'Northeast'
-            WHEN state IN ('IL', 'IN', 'MI', 'OH', 'WI', 'MN', 'IA', 'MO', 'ND', 'SD', 'NE', 'KS') THEN 'Midwest'
-            ELSE 'Other'
-        END AS region,
+            WHEN address IS NULL THEN 0
+            WHEN city IS NOT NULL AND address NOT LIKE '%' || city || '%' THEN 1
+            ELSE 0
+        END AS address_city_mismatch_flag,
+        
+        CASE 
+            WHEN address IS NULL THEN 0
+            WHEN state IS NOT NULL AND address NOT LIKE '%' || state || '%' THEN 1
+            ELSE 0
+        END AS address_state_mismatch_flag,
+        
+        CASE 
+            WHEN address IS NULL THEN 0
+            WHEN zip_code IS NOT NULL AND address NOT LIKE '%' || zip_code || '%' THEN 1
+            ELSE 0
+        END AS address_zip_mismatch_flag,
+
+        CASE WHEN city IS NULL OR TRIM(city) = '' THEN 1 ELSE 0 END AS missing_city_flag,
+        CASE WHEN state IS NULL OR TRIM(state) = '' THEN 1 ELSE 0 END AS missing_state_flag,
+        CASE WHEN zip_code IS NULL OR TRIM(zip_code) = '' THEN 1 ELSE 0 END AS missing_zip_code_flag,
+
+        CASE WHEN phone IS NULL OR TRIM(phone) = '' THEN 1 ELSE 0 END AS missing_phone_flag,
+        CASE WHEN manager IS NULL OR TRIM(manager) = '' THEN 1 ELSE 0 END AS missing_manager_flag,
 
         CASE 
-            WHEN city IN ('New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 
-                          'Philadelphia', 'San Antonio', 'San Diego', 'Dallas', 'San Jose',
-                          'Austin', 'Jacksonville', 'Fort Worth', 'Columbus', 'Charlotte',
-                          'San Francisco', 'Indianapolis', 'Seattle', 'Denver', 'Boston') 
+            WHEN LENGTH(REGEXP_REPLACE(phone, '[^0-9]', '', 'g')) < 10 THEN 1
+            ELSE 0
+        END AS phone_too_short_flag,
+
+        CASE WHEN store_name IS NULL OR TRIM(store_name) = '' THEN 1 ELSE 0 END AS missing_store_name_flag,
+        CASE WHEN store_type IS NULL OR TRIM(store_type) = '' THEN 1 ELSE 0 END AS missing_store_type_flag,
+        CASE WHEN opening_date IS NULL THEN 1 ELSE 0 END AS missing_opening_date_flag,
+
+        CASE 
+            WHEN TRY_CAST(opening_date AS DATE) > CURRENT_DATE THEN 1 
+            ELSE 0 
+        END AS future_opening_date_flag,
+
+        CASE 
+            WHEN TRY_CAST(opening_date AS DATE) IS NOT NULL 
+                AND DATE_DIFF('year', TRY_CAST(opening_date AS DATE), CURRENT_DATE) > 20 
+            THEN 1
+            ELSE 0
+        END AS very_old_store_flag,
+
+        CASE 
+            WHEN TRY_CAST(opening_date AS DATE) IS NULL THEN 'Unknown'
+            WHEN TRY_CAST(opening_date AS DATE) > CURRENT_DATE THEN 'Not Yet Opened'
+            WHEN DATE_DIFF('day', TRY_CAST(opening_date AS DATE), CURRENT_DATE) < 365 THEN 'New (< 1 year)'
+            WHEN DATE_DIFF('day', TRY_CAST(opening_date AS DATE), CURRENT_DATE) < 1095 THEN 'Young (1-3 years)'
+            WHEN DATE_DIFF('day', TRY_CAST(opening_date AS DATE), CURRENT_DATE) < 1825 THEN 'Established (3-5 years)'
+            ELSE 'Mature (5+ years)'
+        END AS store_age_category,
+
+        CASE 
+            WHEN TRY_CAST(opening_date AS DATE) <= CURRENT_DATE 
+                AND phone IS NOT NULL 
+                AND manager IS NOT NULL 
             THEN TRUE
             ELSE FALSE
-        END AS is_metro_area,
+        END AS is_fully_operational,
 
-        CASE 
-            WHEN address_city_mismatch_flag = 0 
-                AND address_state_mismatch_flag = 0 
-                AND address_zip_mismatch_flag = 0 
-                AND missing_manager_flag = 0
-            THEN 'COMPLETE'
-            WHEN address_city_mismatch_flag = 0 
-                AND address_state_mismatch_flag = 0 
-                AND address_zip_mismatch_flag = 0
-            THEN 'GOOD'
-            ELSE 'BASIC'
-        END AS store_data_quality,
+        CURRENT_TIMESTAMP AS _loaded_at,
+        '{{ run_started_at }}' AS _batch_id,
+        '{{ var("source_system", "RETAIL_S3") }}' AS _source_system,
 
-        _loaded_at AS bronze_loaded_at,
-        CURRENT_TIMESTAMP AS staging_loaded_at,
-        _batch_id AS bronze_batch_id,
-        '{{ invocation_id }}' AS staging_batch_id,
-        _source_system
-    
-    FROM filtered
+        MD5(
+            COALESCE(store_name, '') || '|' ||
+            COALESCE(address, '') || '|' ||
+            COALESCE(city, '') || '|' ||
+            COALESCE(state, '') || '|' ||
+            COALESCE(CAST(zip_code AS VARCHAR), '') || '|' ||
+            COALESCE(phone, '') || '|' ||
+            COALESCE(manager, '') || '|' ||
+            COALESCE(store_type, '') || '|' ||
+            COALESCE(CAST(opening_date AS VARCHAR), '')
+        ) AS _row_hash,
+
+        'raw_stores' AS _source_table
+
+    FROM source_data
 )
 
-SELECT * FROM staging_final
+SELECT * FROM staging_cleaned

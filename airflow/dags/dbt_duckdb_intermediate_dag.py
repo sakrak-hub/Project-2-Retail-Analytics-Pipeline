@@ -41,7 +41,7 @@ def run_silver_with_schema_detection(**context):
 
     ti = context['ti']
     
-    cmd = "cd /opt/airflow/dbt && dbt run --select staging --profiles-dir /opt/airflow/dbt"
+    cmd = "cd /opt/airflow/dbt && dbt run --select intermediate --profiles-dir /opt/airflow/dbt"
     
     result = subprocess.run(
         cmd,
@@ -65,18 +65,18 @@ def run_silver_with_schema_detection(**context):
         return 'schema_reconcile_silver'
     
     if result.returncode == 0:
-        logger.info("✅ Staging run successful")
+        logger.info("✅ intermediate run successful")
         ti.xcom_push(key='schema_change_detected', value=False)
         return 'continue_pipeline'
 
-    logger.error(f"Staging run failed: {output}")
-    raise ValueError("Staging run failed")
+    logger.error(f"intermediate run failed: {output}")
+    raise ValueError("intermediate run failed")
 
 def reconcile_silver_schema(**context):
 
     logger.info("🔧 Running schema reconciliation (full_refresh)")
     
-    cmd = "cd /opt/airflow/dbt && dbt run --select staging --full-refresh --profiles-dir /opt/airflow/dbt"
+    cmd = "cd /opt/airflow/dbt && dbt run --select intermediate --full-refresh --profiles-dir /opt/airflow/dbt"
     
     result = subprocess.run(
         cmd,
@@ -139,7 +139,7 @@ def log_schema_change(**context):
             INSERT INTO retail_transactions_data.schema_change_log 
             (log_id, model_name, detected_at, reconciliation_method, reconciliation_status, dag_run_id)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, [next_id, 'staging_transactions', schema_time, 'full_refresh', 'completed', dag_run_id])
+        """, [next_id, 'intermediate_transactions', schema_time, 'full_refresh', 'completed', dag_run_id])
         
         logger.info("✅ Schema change logged to database")
     
@@ -168,7 +168,7 @@ def check_silver_quality_gate(**context):
             clean_records,
             clean_pct,
             corrected_pct,
-            transaction_staging_quality_score,
+            transaction_intermediate_quality_score,
             deduplication_status,
             deduplication_success_pct,
             health_status,
@@ -176,14 +176,14 @@ def check_silver_quality_gate(**context):
             refund_pct,
             total_line_item_revenue,
             quality_alert_flag
-        FROM quality_db.staging_transactions_profile;
+        FROM quality_db.intermediate_transactions_profile;
         """
         
         result = conn.execute(query).fetchone()
         
         if not result:
-            logger.error("❌ No staging profile data found for today")
-            raise ValueError("No staging profile data available")
+            logger.error("❌ No intermediate profile data found for today")
+            raise ValueError("No intermediate profile data available")
         
         (total_lines, unique_lines, unique_txns, unique_custs, 
          avg_items, clean_recs, clean_pct, corrected_pct, quality_score,
@@ -191,7 +191,7 @@ def check_silver_quality_gate(**context):
          revenue, alert_flag) = result
         
         logger.info("="*60)
-        logger.info("SILVER/STAGING QUALITY GATE CHECK")
+        logger.info("SILVER/intermediate QUALITY GATE CHECK")
         logger.info("="*60)
         logger.info(f"Total Line Items:              {total_lines:,}")
         logger.info(f"Unique Line Items:             {unique_lines:,}")
@@ -213,35 +213,35 @@ def check_silver_quality_gate(**context):
         logger.info(f"Quality Alert:                 {'⚠️ YES' if alert_flag else '✅ NO'}")
         logger.info("")
         
-        STAGING_REQUIRED_DEDUP_PCT = 100.0
+        intermediate_REQUIRED_DEDUP_PCT = 100.0
         
-        STAGING_MIN_QUALITY_SCORE = 90.0
+        intermediate_MIN_QUALITY_SCORE = 90.0
         
-        STAGING_MIN_CLEAN_PCT = 70.0
+        intermediate_MIN_CLEAN_PCT = 70.0
         
-        STAGING_MAX_REFUND_PCT = 10.0
-        STAGING_MIN_AVG_ITEMS = 1.5
-        STAGING_MAX_AVG_ITEMS = 3.0
+        intermediate_MAX_REFUND_PCT = 10.0
+        intermediate_MIN_AVG_ITEMS = 1.5
+        intermediate_MAX_AVG_ITEMS = 3.0
         
-        ti.xcom_push(key='staging_quality_score', value=float(quality_score))
-        ti.xcom_push(key='staging_clean_pct', value=float(clean_pct))
-        ti.xcom_push(key='staging_dedup_pct', value=float(dedup_pct))
-        ti.xcom_push(key='staging_total_lines', value=int(total_lines))
-        ti.xcom_push(key='staging_unique_txns', value=int(unique_txns))
-        ti.xcom_push(key='staging_health_status', value=health)
-        ti.xcom_push(key='staging_quality_tier', value=tier)
-        ti.xcom_push(key='staging_refund_pct', value=float(refund_pct))
-        ti.xcom_push(key='staging_revenue', value=float(revenue))
+        ti.xcom_push(key='intermediate_quality_score', value=float(quality_score))
+        ti.xcom_push(key='intermediate_clean_pct', value=float(clean_pct))
+        ti.xcom_push(key='intermediate_dedup_pct', value=float(dedup_pct))
+        ti.xcom_push(key='intermediate_total_lines', value=int(total_lines))
+        ti.xcom_push(key='intermediate_unique_txns', value=int(unique_txns))
+        ti.xcom_push(key='intermediate_health_status', value=health)
+        ti.xcom_push(key='intermediate_quality_tier', value=tier)
+        ti.xcom_push(key='intermediate_refund_pct', value=float(refund_pct))
+        ti.xcom_push(key='intermediate_revenue', value=float(revenue))
         
-        dedup_perfect = (dedup_pct == STAGING_REQUIRED_DEDUP_PCT)
+        dedup_perfect = (dedup_pct == intermediate_REQUIRED_DEDUP_PCT)
         
-        quality_ok = (quality_score >= STAGING_MIN_QUALITY_SCORE)
+        quality_ok = (quality_score >= intermediate_MIN_QUALITY_SCORE)
         
-        clean_ok = (clean_pct >= STAGING_MIN_CLEAN_PCT)
+        clean_ok = (clean_pct >= intermediate_MIN_CLEAN_PCT)
         
-        refund_ok = (refund_pct <= STAGING_MAX_REFUND_PCT)
+        refund_ok = (refund_pct <= intermediate_MAX_REFUND_PCT)
         
-        avg_items_ok = (STAGING_MIN_AVG_ITEMS <= avg_items <= STAGING_MAX_AVG_ITEMS)
+        avg_items_ok = (intermediate_MIN_AVG_ITEMS <= avg_items <= intermediate_MAX_AVG_ITEMS)
         
         unique_ok = (total_lines == unique_lines)
 
@@ -255,14 +255,14 @@ def check_silver_quality_gate(**context):
         )
         
         if passed:
-            logger.info("✅ STAGING QUALITY GATE PASSED")
+            logger.info("✅ intermediate QUALITY GATE PASSED")
             logger.info("="*60)
             logger.info("ALL CHECKS PASSED:")
-            logger.info(f"   ✅ Deduplication:       {dedup_pct:.1f}% = {STAGING_REQUIRED_DEDUP_PCT}%")
-            logger.info(f"   ✅ Quality Score:       {quality_score:.1f} >= {STAGING_MIN_QUALITY_SCORE}")
-            logger.info(f"   ✅ Clean Data:          {clean_pct:.1f}% >= {STAGING_MIN_CLEAN_PCT}%")
-            logger.info(f"   ✅ Refunds:             {refund_pct:.1f}% <= {STAGING_MAX_REFUND_PCT}%")
-            logger.info(f"   ✅ Avg Items/Txn:       {avg_items:.2f} in [{STAGING_MIN_AVG_ITEMS}, {STAGING_MAX_AVG_ITEMS}]")
+            logger.info(f"   ✅ Deduplication:       {dedup_pct:.1f}% = {intermediate_REQUIRED_DEDUP_PCT}%")
+            logger.info(f"   ✅ Quality Score:       {quality_score:.1f} >= {intermediate_MIN_QUALITY_SCORE}")
+            logger.info(f"   ✅ Clean Data:          {clean_pct:.1f}% >= {intermediate_MIN_CLEAN_PCT}%")
+            logger.info(f"   ✅ Refunds:             {refund_pct:.1f}% <= {intermediate_MAX_REFUND_PCT}%")
+            logger.info(f"   ✅ Avg Items/Txn:       {avg_items:.2f} in [{intermediate_MIN_AVG_ITEMS}, {intermediate_MAX_AVG_ITEMS}]")
             logger.info(f"   ✅ Unique = Total:      {unique_lines:,} = {total_lines:,}")
             logger.info("="*60)
             logger.info("🚀 Proceeding to Gold Layer")
@@ -270,12 +270,12 @@ def check_silver_quality_gate(**context):
             return 'trigger_data_mart'
         
         else:
-            logger.warning("⚠️ STAGING QUALITY GATE NOT MET - SKIPPING GOLD LAYER")
+            logger.warning("⚠️ intermediate QUALITY GATE NOT MET - SKIPPING GOLD LAYER")
             logger.warning("="*60)
             logger.warning("FAILED CHECKS:")
             
             if not dedup_perfect:
-                logger.error(f"   ❌ CRITICAL: Deduplication not perfect: {dedup_pct:.1f}% != {STAGING_REQUIRED_DEDUP_PCT}%")
+                logger.error(f"   ❌ CRITICAL: Deduplication not perfect: {dedup_pct:.1f}% != {intermediate_REQUIRED_DEDUP_PCT}%")
                 logger.error(f"      Status: {dedup_status}")
             
             if not unique_ok:
@@ -283,20 +283,20 @@ def check_silver_quality_gate(**context):
                 logger.error(f"      Duplicates: {total_lines - unique_lines:,}")
             
             if not quality_ok:
-                logger.warning(f"   ⚠️  Quality too low: {quality_score:.1f} < {STAGING_MIN_QUALITY_SCORE}")
+                logger.warning(f"   ⚠️  Quality too low: {quality_score:.1f} < {intermediate_MIN_QUALITY_SCORE}")
             
             if not clean_ok:
-                logger.warning(f"   ⚠️  Clean % too low: {clean_pct:.1f}% < {STAGING_MIN_CLEAN_PCT}%")
+                logger.warning(f"   ⚠️  Clean % too low: {clean_pct:.1f}% < {intermediate_MIN_CLEAN_PCT}%")
             
             if not refund_ok:
-                logger.warning(f"   ⚠️  Refunds too high: {refund_pct:.1f}% > {STAGING_MAX_REFUND_PCT}%")
+                logger.warning(f"   ⚠️  Refunds too high: {refund_pct:.1f}% > {intermediate_MAX_REFUND_PCT}%")
             
             if not avg_items_ok:
-                logger.warning(f"   ⚠️  Unusual grain: {avg_items:.2f} items/txn not in [{STAGING_MIN_AVG_ITEMS}, {STAGING_MAX_AVG_ITEMS}]")
+                logger.warning(f"   ⚠️  Unusual grain: {avg_items:.2f} items/txn not in [{intermediate_MIN_AVG_ITEMS}, {intermediate_MAX_AVG_ITEMS}]")
             
             logger.warning("="*60)
-            logger.warning("⏭️  Skipping Gold layer - Staging quality below threshold")
-            logger.warning("   Staging data is available but won't proceed to dimensional modelling")
+            logger.warning("⏭️  Skipping Gold layer - intermediate quality below threshold")
+            logger.warning("   intermediate data is available but won't proceed to dimensional modelling")
             
             return 'skip_gold'
     
@@ -304,7 +304,7 @@ def check_silver_quality_gate(**context):
         conn.close()
 
 with DAG(
-    'retail_analytics_dbt_duckdb_staging',
+    'retail_analytics_dbt_duckdb_intermediate',
     default_args={
         'owner': 'Sakkaravarthi',
         'depends_on_past': False,
@@ -346,13 +346,13 @@ with DAG(
 
     dbt_test_silver = BashOperator( 
         task_id='dbt_test_silver',
-        bash_command='cd /opt/airflow/dbt && dbt test --select staging --profiles-dir /opt/airflow/dbt',
+        bash_command='cd /opt/airflow/dbt && dbt test --select intermediate --profiles-dir /opt/airflow/dbt',
         trigger_rule='none_failed_min_one_success'
     )
 
     dbt_create_silver_profile = BashOperator(
         task_id='dbt_create_silver_profile',
-        bash_command='cd /opt/airflow/dbt && dbt run --select staging_transactions_profile --profiles-dir /opt/airflow/dbt'
+        bash_command='cd /opt/airflow/dbt && dbt run --select intermediate_transactions_profile --profiles-dir /opt/airflow/dbt'
     )
 
     silver_quality_gate = BranchPythonOperator(
@@ -369,15 +369,15 @@ with DAG(
             'triggered_by': 'silver_quality_gate',
             'execution_date': '{{ logical_date }}',
             'silver_run_id': '{{ run_id }}',
-            'staging_quality_score': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="staging_quality_score") }}',
-            'staging_clean_pct': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="staging_clean_pct") }}',
-            'staging_dedup_pct': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="staging_dedup_pct") }}',
-            'staging_total_lines': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="staging_total_lines") }}',
-            'staging_unique_txns': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="staging_unique_txns") }}',
-            'staging_health_status': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="staging_health_status") }}',
-            'staging_quality_tier': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="staging_quality_tier") }}',
-            'staging_refund_pct': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="bronze_quality_tier") }}',
-            'staging_revenue': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="bronze_quality_tier") }}'
+            'intermediate_quality_score': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="intermediate_quality_score") }}',
+            'intermediate_clean_pct': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="intermediate_clean_pct") }}',
+            'intermediate_dedup_pct': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="intermediate_dedup_pct") }}',
+            'intermediate_total_lines': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="intermediate_total_lines") }}',
+            'intermediate_unique_txns': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="intermediate_unique_txns") }}',
+            'intermediate_health_status': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="intermediate_health_status") }}',
+            'intermediate_quality_tier': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="intermediate_quality_tier") }}',
+            'intermediate_refund_pct': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="bronze_quality_tier") }}',
+            'intermediate_revenue': '{{ ti.xcom_pull(task_ids="silver_quality_gate", key="bronze_quality_tier") }}'
         },
 
 
@@ -389,8 +389,8 @@ with DAG(
         task_id='skip_mart'
     )
 
-    staging_pipeline_complete = EmptyOperator(
-        task_id='staging_pipeline_complete',
+    intermediate_pipeline_complete = EmptyOperator(
+        task_id='intermediate_pipeline_complete',
         trigger_rule='none_failed_min_one_success'
     )
 
@@ -406,6 +406,6 @@ with DAG(
 
     silver_quality_gate >> [trigger_data_mart, skip_mart]
 
-    trigger_data_mart >> staging_pipeline_complete
+    trigger_data_mart >> intermediate_pipeline_complete
 
-    skip_mart >> staging_pipeline_complete
+    skip_mart >> intermediate_pipeline_complete
