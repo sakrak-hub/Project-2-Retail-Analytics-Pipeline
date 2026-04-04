@@ -873,7 +873,7 @@ models:
                 severity: warn
                 warn_if: ">100"
       
-      - name: ltv_category
+      - name: ltv_tier
         description: Lifetime value category
         tests:
           - not_null:

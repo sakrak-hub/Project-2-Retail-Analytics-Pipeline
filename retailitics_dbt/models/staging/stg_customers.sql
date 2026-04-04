@@ -74,7 +74,7 @@ staging_cleaned AS (
         CASE
             WHEN zip_code::VARCHAR IN us_county.zip_code THEN 0
             ELSE 1
-        END AS 
+        END AS invalid_zip_code_flag,
 
 
         CASE 
@@ -110,6 +110,16 @@ staging_cleaned AS (
         END AS age,
 
         CASE 
+            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE)<18 THEN 'Under 18'
+            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE) BETWEEN 18 AND 24 THEN '18-24'
+            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE) BETWEEN 25 AND 34 THEN '25-34'
+            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE) BETWEEN 35 AND 44 THEN '35-44'
+            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE) BETWEEN 45 AND 54 THEN '45-54'
+            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE) BETWEEN 55 AND 64 THEN '55-64'
+            ELSE '65+'
+        END AS age_group,
+
+        CASE 
             WHEN UPPER(TRIM(gender)) IN ('MALE', 'M') THEN 'Male'
             WHEN UPPER(TRIM(gender)) IN ('FEMALE', 'F') THEN 'Female'
             WHEN UPPER(TRIM(gender)) = 'OTHER' THEN 'Other'
@@ -125,6 +135,13 @@ staging_cleaned AS (
             WHEN registration_date IS NULL OR TRIM(registration_date::VARCHAR) = '' THEN NULL
             ELSE DATE_DIFF('day', TRY_CAST(registration_date AS DATE), CURRENT_DATE)
         END AS days_since_registration,
+
+        CASE
+            WHEN DATE_DIFF('month', TRY_CAST(registration_date AS DATE), CURRENT_DATE)>24 THEN 'Loyal (2+ years)'
+            WHEN DATE_DIFF('month', TRY_CAST(registration_date AS DATE), CURRENT_DATE) BETWEEN 12 AND 24 THEN 'Established (1-2 years)'
+            WHEN DATE_DIFF('month', TRY_CAST(registration_date AS DATE), CURRENT_DATE)>24 BETWEEN 3 AND 12 THEN 'Recent (3-12 months)'
+            ELSE 'New (< 3 months)'
+        END AS customer_tenure_category,
 
         COALESCE(loyalty_member, FALSE) AS loyalty_member,
 
