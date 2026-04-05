@@ -1,4 +1,4 @@
-Zip Code,State Name,State Abrv,State Code,County Name,County Code,FIPS Code,ANSI Code,Centroid Lat,Centroid Long
+zip_code,state_name,state_abrv,state_code,county_name,county_code,fips_code,ansi_code,cent_lat,cent_long
 00501,New York,NY,36,Suffolk County,103,36103,00974149,40.943554,-72.692218
 00544,New York,NY,36,Suffolk County,103,36103,00974149,40.943554,-72.692218
 06390,New York,NY,36,Suffolk County,103,36103,00974149,40.943554,-72.692218

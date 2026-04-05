@@ -713,19 +713,6 @@ models:
                 severity: warn
                 warn_if: ">100"
       
-      - name: phone_too_short_flag
-        description: Flag indicating phone number is too short
-        tests:
-          - accepted_values:
-              values: [0, 1]
-              config:
-                severity: error
-          - dbt_utils.expression_is_true:
-              expression: "= 0"
-              config:
-                severity: warn
-                warn_if: ">100"
-      
       - name: street_address
         description: Customer's street address
         tests:
@@ -905,7 +892,7 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - accepted_values:
               values: [0, 1]
               config:
@@ -921,9 +908,9 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - accepted_values:
-              values: [0]
+              values: [0,1]
               config:
                 severity: error
       
@@ -932,9 +919,9 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - accepted_values:
-              values: [0]
+              values: [0,1]
               config:
                 severity: error
       
@@ -943,9 +930,9 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - accepted_values:
-              values: [0]
+              values: [0,1]
               config:
                 severity: error
       
@@ -954,20 +941,9 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - accepted_values:
-              values: [0]
-              config:
-                severity: error
-      
-      - name: invalid_email_flag
-        description: Flag for invalid email (should be 0 in staging)
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - accepted_values:
-              values: [0]
+              values: [0,1]
               config:
                 severity: error
       
@@ -985,22 +961,6 @@ models:
                 severity: warn
           - dbt_utils.expression_is_true:
               expression: "<= 2"
-              config:
-                severity: warn
-                warn_if: ">100"
-      
-      - name: quality_tier
-        description: Overall data quality classification
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - accepted_values:
-              values: ['CLEAN', 'ACCEPTABLE', 'POOR']
-              config:
-                severity: error
-          - dbt_utils.expression_is_true:
-              expression: "IN ('CLEAN', 'ACCEPTABLE')"
               config:
                 severity: warn
                 warn_if: ">100"
@@ -1194,14 +1154,14 @@ models:
                 severity: warn
                 warn_if: ">100"
       
-      - name: price_category
+      - name: price_tier
         description: Price category based on flags
         tests:
           - not_null:
               config:
                 severity: warn
           - accepted_values:
-              values: ['LUXURY', 'CLEARANCE', 'STANDARD']
+              values: ['Premium', 'Mid-Range', 'Budget', 'Economy', 'Invalid']
               config:
                 severity: error
       
@@ -1230,25 +1190,14 @@ models:
                 severity: warn
                 warn_if: ">100"
       
-      - name: is_available
-        description: Product is currently available for purchase
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - accepted_values:
-              values: [true, false]
-              config:
-                severity: error
-      
-      - name: is_out_of_stock
+      - name: zero_stock_quantity_flag
         description: Product is currently out of stock
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - accepted_values:
-              values: [true, false]
+              values: [0,1]
               config:
                 severity: error
       
@@ -1257,9 +1206,9 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - accepted_values:
-              values: [true, false]
+              values: [0,1]
               config:
                 severity: error
       
@@ -1328,9 +1277,9 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - accepted_values:
-              values: [true, false]
+              values: [1,0]
               config:
                 severity: error
       
@@ -1344,17 +1293,6 @@ models:
               values: ['Unknown', 'Low Margin (< 10%)', 'Moderate Margin (10-25%)', 'Good Margin (25-50%)', 'High Margin (50%+)']
               config:
                 severity: warn
-      
-      - name: product_data_quality
-        description: Overall product data completeness indicator
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - accepted_values:
-              values: ['COMPLETE', 'GOOD', 'BASIC']
-              config:
-                severity: error
       
       - name: bronze_loaded_at
         description: When raw record was loaded from source

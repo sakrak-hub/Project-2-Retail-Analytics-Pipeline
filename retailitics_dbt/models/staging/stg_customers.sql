@@ -27,10 +27,6 @@ WITH source_data AS (
     {% endif %}
 ),
 
-us_county AS (
-    SELECT * FROM {{ref('us_zip_fips_county')}}
-),
-
 staging_cleaned AS (
     SELECT
         customer_id,
@@ -72,10 +68,22 @@ staging_cleaned AS (
         TRIM(zip_code) AS zip_code,
 
         CASE
-            WHEN zip_code::VARCHAR IN us_county.zip_code THEN 0
+            WHEN zip_code::VARCHAR IN 
+            (SELECT zip_code FROM {{ ref('us_zip_fips_county')}} ) THEN 0
             ELSE 1
         END AS invalid_zip_code_flag,
 
+        CASE
+            WHEN (state,zip_code) IN(
+                SELECT 
+                a.state, a.zip_code
+                FROM {{ ref('raw_customers')}} a 
+                JOIN {{ ref('us_zip_fips_county')}} b 
+                ON a.state=b.state_name
+                AND a.zip_code=b.zip_code
+            ) THEN 0
+            ELSE 1
+        END AS state_zip_mismatch_flag,
 
         CASE 
             WHEN address IS NULL THEN 0
@@ -172,12 +180,6 @@ staging_cleaned AS (
 
         CASE WHEN email IS NULL OR TRIM(email) = '' THEN 1 ELSE 0 END AS missing_email_flag,
         CASE WHEN phone IS NULL OR TRIM(phone) = '' THEN 1 ELSE 0 END AS missing_phone_flag,
-        CASE 
-            WHEN email IS NULL THEN 0
-            WHEN email NOT LIKE '%@%' THEN 1
-            WHEN email NOT LIKE '%.%' THEN 1
-            ELSE 0
-        END AS invalid_email_flag,
 
         TRIM(REGEXP_REPLACE(first_name, '[^\x20-\x7E]', '', 'g')) AS first_name_clean,
         TRIM(REGEXP_REPLACE(last_name, '[^\x20-\x7E]', '', 'g')) AS last_name_clean,

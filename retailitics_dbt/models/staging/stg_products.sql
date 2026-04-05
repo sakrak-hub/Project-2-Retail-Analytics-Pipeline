@@ -54,7 +54,15 @@ staging_cleaned AS (
         CASE 
             WHEN launch_date IS NULL OR TRIM(launch_date::VARCHAR)='' THEN NULL
             ELSE TRY_CAST(launch_date AS DATE)
-            END as launch_date,
+        END as launch_date,
+
+        CASE
+            WHEN (launch_date::DATE)>today() THEN 1
+            ELSE 0
+        END AS is_upcoming,
+
+        CASE
+            WHEN 
         
         CASE WHEN product_name IS NULL OR TRIM(product_name) = '' THEN 1 ELSE 0 END AS missing_product_name_flag,
         CASE WHEN category IS NULL OR TRIM(category) = '' THEN 1 ELSE 0 END AS missing_category_flag,
@@ -64,6 +72,7 @@ staging_cleaned AS (
         CASE WHEN stock_quantity < 0 THEN 1 ELSE 0 END AS negative_stock_quantity_flag,
         CASE WHEN stock_quantity IS NULL THEN 1 ELSE 0 END AS missing_stock_quantity_flag,
         CASE WHEN stock_quantity = 0 THEN 1 ELSE 0 END AS zero_stock_quantity_flag,
+        CASE WHEN stock_quantity BETWEEN 1 AND 9 THEN 1 ELSE 0 END AS is_low_stock,
 
         CASE WHEN price IS NULL OR price <= 0 THEN 1 ELSE 0 END AS invalid_price_flag,
         CASE WHEN cost IS NULL OR cost < 0 THEN 1 ELSE 0 END AS invalid_cost_flag,
@@ -89,6 +98,14 @@ staging_cleaned AS (
                 ROUND(((price - cost) / price) * 100, 2)
             ELSE NULL
         END AS profit_margin_pct,
+
+        CASE
+            WHEN price > 0 AND cost >= 0 AND ROUND(((price - cost) / price) * 100, 2)<10 THEN 'Low Margin (< 10%)'
+            WHEN price > 0 AND cost >= 0 AND ROUND(((price - cost) / price) * 100, 2) BETWEEN 10 AND 25 THEN 'Moderate Margin (10-25%)'
+            WHEN price > 0 AND cost >= 0 AND ROUND(((price - cost) / price) * 100, 2) BETWEEN 25 AND 50 THEN 'Good Margin (25-50%)'
+            WHEN price > 0 AND cost >= 0 AND ROUND(((price - cost) / price) * 100, 2)>50 THEN 'High Margin (50%+)'
+            ELSE 'Unknown'
+        END AS margin_tier,
 
         CASE 
             WHEN price >= 1000 THEN 'Premium'

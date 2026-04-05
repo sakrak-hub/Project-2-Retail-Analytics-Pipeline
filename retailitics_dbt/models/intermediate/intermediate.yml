@@ -1103,7 +1103,7 @@ models:
               config:
                 severity: error
       
-      - name: bronze_loaded_at
+      - name: staging_loaded_at
         description: When raw record was loaded from source
         tests:
           - not_null:
@@ -1121,8 +1121,8 @@ models:
               config:
                 severity: error
       
-      - name: bronze_batch_id
-        description: Bronze layer batch identifier
+      - name: staging_batch_id
+        description: staging layer batch identifier
         tests:
           - not_null:
               config:

@@ -231,34 +231,6 @@ def log_schema_change(**context):
     finally:
         conn.close()
 
-def rename_column(**context):
-
-    conn = duckdb.connect('/opt/airflow/dbt/warehouse.duckdb')
-
-    query = """
-    CREATE OR REPLACE TABLE retail_transactions_data.us_zip_fips_county AS
-        SELECT * RENAME (
-            "Zip Code" AS zip_code,
-            "State Name" AS state_name,
-            "State Abrv" AS state_abrv,
-            "State Code" AS state_code,
-            "County Name" AS county_name,
-            "County Code" AS count_code,
-            "FIPS Code" AS fips_code,
-            "ANSI Code" AS ansi_code,
-            "Centroid Lat" AS cent_lat,
-            "Centroid Long" AS cent_long
-        )
-        FROM retail_transactions_data.us_zip_fips_county
-    """
-
-    try:
-        conn.execute(query)
-    except Exception as e:
-        logger.error(f"Failed to change column names: {e}")
-        
-    finally:
-        conn.close()
 
 with DAG(
     'retail_analytics_dbt_duckdb_raw',
@@ -289,12 +261,7 @@ with DAG(
 
     dbt_seed = BashOperator(
         task_id='dbt_seed',
-        bash_command='cd /opt/airflow/dbt && dbt seed --profiles-dir /opt/airflow/dbt'
-    )
-
-    dbt_seed_column_rename = PythonOperator(
-        task_id='dbt_seed_column_rename',
-        python_callable = rename_column
+        bash_command='cd /opt/airflow/dbt && dbt seed --full-refresh --profiles-dir /opt/airflow/dbt'
     )
 
     dbt_run_raw = BashOperator(
@@ -377,7 +344,7 @@ with DAG(
 
     start >> raw_layer_start
 
-    raw_layer_start >> dbt_seed >> dbt_seed_column_rename >> dbt_run_raw >> dbt_test_raw_sources
+    raw_layer_start >> dbt_seed >> dbt_run_raw >> dbt_test_raw_sources
 
     dbt_test_raw_sources >> staging_layer_start
 
