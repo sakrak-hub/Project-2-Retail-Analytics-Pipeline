@@ -8,11 +8,11 @@
 }}
 
 WITH staging_source AS (
-    SELECT * 
+    SELECT *  
     FROM {{ ref('stg_products') }}
     
     {% if is_incremental() %}
-    WHERE _loaded_at > (SELECT MAX(staging_loaded_at) FROM {{ this }})
+    WHERE staging_loaded_at > (SELECT MAX(intermediate_loaded_at) FROM {{ this }})
     {% endif %}
 ),
 
@@ -111,9 +111,9 @@ intermediate_final AS (
             ELSE 'BASIC'
         END AS product_data_quality,
 
-        _loaded_at AS staging_loaded_at,
-        CURRENT_TIMESTAMP AS intermediate_loaded_at,
-        _batch_id AS staging_batch_id,
+        staging_loaded_at,
+        CURRENT_TIMESTAMP AS intermediate_loaded_at, 
+        staging_batch_id,
         '{{ invocation_id }}' AS intermediate_batch_id,
         _source_system
         

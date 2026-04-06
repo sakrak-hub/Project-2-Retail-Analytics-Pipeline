@@ -10,10 +10,10 @@
 
 WITH sales_transactions AS (
     SELECT * 
-    FROM {{ ref('stg_transactions') }}
+    FROM {{ ref('intmd_transactions') }}
     
     {% if is_incremental() %}
-    WHERE staging_loaded_at > (SELECT MAX(fact_loaded_at) FROM {{ this }})
+    WHERE intermediate_loaded_at > (SELECT MAX(fact_loaded_at) FROM {{ this }})
     {% endif %}
 ),
 
@@ -98,7 +98,7 @@ sales_with_dimension AS (
 
         txn.raw_loaded_at AS date_of_creation,
         txn.bronze_processed_at,
-        txn.staging_processed_at AS fact_loaded_at,
+        txn.intermediate_processed_at AS fact_loaded_at,
         txn._source_system,
         CURRENT_TIMESTAMP AS created_at
     

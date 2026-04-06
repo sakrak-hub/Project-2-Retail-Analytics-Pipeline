@@ -62,7 +62,13 @@ staging_cleaned AS (
         END AS is_upcoming,
 
         CASE
-            WHEN 
+            WHEN DATE_DIFF('month', launch_date::DATE, today())<1 THEN 'New (< 1 month)'
+            WHEN DATE_DIFF('month', launch_date::DATE, today()) BETWEEN 1 AND 3 THEN 'Recent (1-3 months)'
+            WHEN DATE_DIFF('month', launch_date::DATE, today()) BETWEEN 3 AND 12 THEN 'Current (< 1 year)'
+            WHEN DATE_DIFF('month', launch_date::DATE, today()) BETWEEN 12 AND 24 THEN 'Established (1-2 years)'
+            WHEN DATE_DIFF('month', launch_date::DATE, today())>24 THEN 'Mature (2+ years)'
+            ELSE 'Unknown'
+        END AS product_maturity,
         
         CASE WHEN product_name IS NULL OR TRIM(product_name) = '' THEN 1 ELSE 0 END AS missing_product_name_flag,
         CASE WHEN category IS NULL OR TRIM(category) = '' THEN 1 ELSE 0 END AS missing_category_flag,
@@ -84,6 +90,14 @@ staging_cleaned AS (
         CASE WHEN weight IS NULL THEN 1 ELSE 0 END AS missing_weight_flag,
         CASE WHEN weight < 0.01 AND weight > 0 THEN 1 ELSE 0 END AS suspiciously_low_weight_flag,
         CASE WHEN weight > 1000 THEN 1 ELSE 0 END AS very_high_weight_flag,
+
+        CASE 
+            WHEN weight<1 THEN 'Light (< 1 kg)'
+            WHEN weight BETWEEN 1 AND 5 THEN 'Medium (1-5 kg)'
+            WHEN weight BETWEEN 5 AND 25 THEN 'Heavy (5-25 kg)'
+            WHEN weight>25 THEN 'Very Heavy (25+ kg)'
+            ELSE 'Unknown'
+        END AS weight_category,
 
         CASE WHEN dimensions IS NULL OR TRIM(dimensions::VARCHAR) = '' THEN 1 ELSE 0 END AS missing_dimensions_flag,
 
@@ -130,8 +144,9 @@ staging_cleaned AS (
             ELSE NULL
         END AS days_since_launch,
 
-        CURRENT_TIMESTAMP AS _loaded_at,
-        '{{ run_started_at }}' AS _batch_id,
+        modified_date AS raw_loaded_at,
+        CURRENT_TIMESTAMP AS staging_loaded_at,
+        '{{ run_started_at }}' AS staging_batch_id,
         '{{ var("source_system", "RETAIL_S3") }}' AS _source_system,
 
         MD5(

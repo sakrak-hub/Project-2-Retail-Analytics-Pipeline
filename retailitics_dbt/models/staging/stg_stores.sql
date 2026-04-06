@@ -137,8 +137,9 @@ staging_cleaned AS (
             ELSE FALSE
         END AS is_fully_operational,
 
-        CURRENT_TIMESTAMP AS _loaded_at,
-        '{{ run_started_at }}' AS _batch_id,
+        modified_date AS raw_loaded_at,
+        CURRENT_TIMESTAMP AS staging_loaded_at,
+        '{{ run_started_at }}' AS staging_batch_id,
         '{{ var("source_system", "RETAIL_S3") }}' AS _source_system,
 
         MD5(

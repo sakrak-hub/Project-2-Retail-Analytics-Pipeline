@@ -102,7 +102,7 @@ def check_staging_quality_gate(**context):
             logger.info(f"   Avg Items/Txn: {avg_items} in [{staging_MIN_AVG_ITEMS}, {staging_MAX_AVG_ITEMS}]")
             logger.info("="*60)
             logger.info("🚀 Continuing to Silver layer")
-            return 'trigger_data_staging'
+            return 'trigger_data_intermediate'
         else:
             logger.error("❌ QUALITY GATE FAILED")
             if score < staging_MIN_QUALITY_SCORE:
@@ -311,9 +311,9 @@ with DAG(
         python_callable=check_staging_quality_gate,
     )
 
-    trigger_staging = TriggerDagRunOperator(
-        task_id='trigger_data_staging',
-        trigger_dag_id='retail_analytics_dbt_duckdb_staging',
+    trigger_intermediate = TriggerDagRunOperator(
+        task_id='trigger_data_intermediate',
+        trigger_dag_id='retail_analytics_dbt_duckdb_intermediate',
         wait_for_completion=True,
         poke_interval=60,
         logical_date = "{{ dag_run.logical_date }}",
@@ -333,8 +333,8 @@ with DAG(
         failed_states=['failed']
     )
 
-    skip_staging = EmptyOperator(
-        task_id='skip_staging'
+    skip_intermediate = EmptyOperator(
+        task_id='skip_intermediate'
     )
 
     pipeline_complete = EmptyOperator(
@@ -356,11 +356,11 @@ with DAG(
     
     continue_pipeline >> dbt_test_staging >> dbt_create_staging_profile >> staging_quality_gate 
     
-    staging_quality_gate >> [trigger_staging, skip_staging]
+    staging_quality_gate >> [trigger_intermediate, skip_intermediate]
 
-    trigger_staging >> pipeline_complete
+    trigger_intermediate >> pipeline_complete
 
-    skip_staging >> pipeline_complete
+    skip_intermediate >> pipeline_complete
 
     dag.doc_md = """
 # Retail Analytics Pipeline with Quality Gates

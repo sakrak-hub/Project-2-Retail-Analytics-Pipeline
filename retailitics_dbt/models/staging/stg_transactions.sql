@@ -132,7 +132,7 @@ staging_cleaned AS (
 
         _loaded_at_date AS raw_loaded_at,
         CURRENT_TIMESTAMP AS staging_processed_at, 
-        '{{ run_started_at }}' AS _batch_id,
+        '{{ run_started_at }}' AS staging_batch_id,
         '{{ var("source_system", "RETAIL_S3") }}' AS _source_system,
 
         MD5(

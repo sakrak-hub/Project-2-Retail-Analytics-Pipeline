@@ -186,9 +186,9 @@ intermediate_final AS (
         high_unit_price_flag AS had_high_unit_price,
 
         raw_loaded_at, 
-        staging_processed_at,
+        staging_processed_at, 
         CURRENT_TIMESTAMP AS intermediate_processed_at,
-        _batch_id AS staging_batch_id,
+        staging_batch_id,
         '{{ invocation_id }}' AS intermediate_batch_id,
         _source_system
         

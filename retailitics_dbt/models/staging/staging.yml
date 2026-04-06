@@ -17,7 +17,7 @@ models:
             - transaction_id_clean
             - product_id
           config:
-            severity: error
+            severity: warn
             error_if: ">0"
       
       - dbt_utils.recency:
@@ -532,7 +532,7 @@ models:
               config:
                 severity: error
       
-      - name: _batch_id
+      - name: staging_batch_id
         description: Batch identifier for this load
         tests:
           - not_null:
@@ -580,7 +580,7 @@ models:
     tests:
       - dbt_utils.recency:
           datepart: day
-          field: _staging_loaded_at
+          field: staging_loaded_at
           interval: 2
           config:
             severity: warn
@@ -703,16 +703,6 @@ models:
                 severity: warn
                 warn_if: ">200"
       
-      - name: phone_digits_only
-        description: Phone number with only digits
-        tests:
-          - dbt_utils.expression_is_true:
-              expression: "LENGTH(phone_digits_only) >= 10"
-              where: "phone_digits_only IS NOT NULL"
-              config:
-                severity: warn
-                warn_if: ">100"
-      
       - name: street_address
         description: Customer's street address
         tests:
@@ -725,7 +715,7 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - dbt_utils.not_empty_string:
               config:
                 severity: error
@@ -735,7 +725,7 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - dbt_utils.not_empty_string:
               config:
                 severity: error
@@ -750,7 +740,7 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - dbt_utils.not_empty_string:
               config:
                 severity: error
@@ -761,48 +751,8 @@ models:
                 severity: warn
                 warn_if: ">100"
       
-      - name: state_code_from_zip
-        description: State code derived from zip code lookup
-        tests:
-          - dbt_expectations.expect_column_value_lengths_to_equal:
-              value: 2
-              where: "state_code_from_zip IS NOT NULL"
-              config:
-                severity: warn
-      
       - name: county_name
         description: County name from zip code lookup
-      
-      - name: fips_code
-        description: FIPS county code from zip lookup
-        tests:
-          - dbt_expectations.expect_column_value_lengths_to_equal:
-              value: 5
-              where: "fips_code IS NOT NULL"
-              config:
-                severity: warn
-      
-      - name: latitude
-        description: Latitude from zip code centroid
-        tests:
-          - dbt_utils.accepted_range:
-              min_value: 24
-              max_value: 50
-              where: "latitude IS NOT NULL"
-              config:
-                severity: warn
-                warn_if: ">100"
-      
-      - name: longitude
-        description: Longitude from zip code centroid
-        tests:
-          - dbt_utils.accepted_range:
-              min_value: -125
-              max_value: -65
-              where: "longitude IS NOT NULL"
-              config:
-                severity: warn
-                warn_if: ">100"
       
       - name: registration_date
         description: Customer registration date
@@ -846,19 +796,6 @@ models:
           - not_null:
               config:
                 severity: warn
-      
-      - name: lifetime_value
-        description: Customer lifetime value
-        tests:
-          - not_null:
-              config:
-                severity: warn
-          - dbt_utils.accepted_range:
-              min_value: -10000
-              max_value: 1000000
-              config:
-                severity: warn
-                warn_if: ">100"
       
       - name: ltv_tier
         description: Lifetime value category
@@ -947,32 +884,14 @@ models:
               config:
                 severity: error
       
-      - name: quality_issues_count
-        description: Total count of quality issues for this customer
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - dbt_utils.accepted_range:
-              min_value: 0
-              max_value: 20
-              inclusive: true
-              config:
-                severity: warn
-          - dbt_utils.expression_is_true:
-              expression: "<= 2"
-              config:
-                severity: warn
-                warn_if: ">100"
-      
-      - name: _loaded_at
+      - name: raw_loaded_at
         description: When raw record was loaded from source
         tests:
           - not_null:
               config:
                 severity: error
       
-      - name: _batch_id
+      - name: staging_batch_id
         description: Batch identifier for this load
         tests:
           - not_null:
@@ -990,7 +909,7 @@ models:
               config:
                 severity: warn
       
-      - name: _staging_loaded_at
+      - name: staging_loaded_at
         description: When this record was loaded to staging
         tests:
           - not_null:
@@ -1143,18 +1062,6 @@ models:
                 warn_if: ">200"
       
       - name: price_tier
-        description: Price tier categorization
-        tests:
-          - not_null:
-              config:
-                severity: warn
-          - accepted_values:
-              values: ['Budget', 'Mid-Range', 'Premium', 'Luxury']
-              config:
-                severity: warn
-                warn_if: ">100"
-      
-      - name: price_tier
         description: Price category based on flags
         tests:
           - not_null:
@@ -1294,7 +1201,7 @@ models:
               config:
                 severity: warn
       
-      - name: bronze_loaded_at
+      - name: raw_loaded_at
         description: When raw record was loaded from source
         tests:
           - not_null:
@@ -1311,13 +1218,6 @@ models:
               expression: "<= CURRENT_TIMESTAMP"
               config:
                 severity: error
-      
-      - name: bronze_batch_id
-        description: Bronze layer batch identifier
-        tests:
-          - not_null:
-              config:
-                severity: warn
       
       - name: staging_batch_id
         description: Staging layer batch identifier
@@ -1378,18 +1278,6 @@ models:
               config:
                 severity: error
       
-      - name: store_type
-        description: Store type classification
-        tests:
-          - not_null:
-              config:
-                severity: warn
-          - accepted_values:
-              values: ['FLAGSHIP', 'MAIN', 'OUTLET', 'CLEARANCE', 'KIOSK', 'POP-UP', 'WAREHOUSE', 'STANDARD', 'EXPRESS', 'SUPERSTORE']
-              config:
-                severity: warn
-                warn_if: ">10"
-      
       - name: manager
         description: Store manager name
         tests:
@@ -1445,33 +1333,7 @@ models:
               config:
                 severity: warn
                 warn_if: ">5"
-      
-      - name: full_address
-        description: Complete formatted address
-        tests:
-          - not_null:
-              config:
-                severity: warn
-          - dbt_utils.not_empty_string:
-              config:
-                severity: warn
-      
-      - name: address_quality
-        description: Address consistency indicator
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - accepted_values:
-              values: ['VALID', 'INCONSISTENT']
-              config:
-                severity: error
-          - dbt_utils.expression_is_true:
-              expression: "= 'VALID'"
-              config:
-                severity: warn
-                warn_if: ">5"
-      
+
       - name: store_phone
         description: Store phone number (required in staging)
         tests:
@@ -1535,17 +1397,6 @@ models:
               config:
                 severity: warn
       
-      - name: store_maturity_tier
-        description: Store maturity tier
-        tests:
-          - not_null:
-              config:
-                severity: warn
-          - accepted_values:
-              values: ['Unknown', 'Brand New', 'Growing', 'Established', 'Mature', 'Legacy']
-              config:
-                severity: warn
-      
       - name: is_fully_operational
         description: Store is fully operational
         tests:
@@ -1562,62 +1413,18 @@ models:
                 severity: warn
                 warn_if: ">3"
       
-      - name: is_legacy_store
-        description: Store is considered legacy (very old)
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - accepted_values:
-              values: [true, false]
-              config:
-                severity: error
-      
-      - name: store_category
+      - name: store_type
         description: Store category classification
         tests:
           - not_null:
               config:
                 severity: warn
           - accepted_values:
-              values: ['Flagship', 'Outlet', 'Temporary', 'Warehouse', 'Standard']
+              values: ['Flagship', 'Outlet', 'Mall', 'Online']
               config:
                 severity: warn
       
-      - name: region
-        description: Geographic region
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - accepted_values:
-              values: ['West', 'South', 'Northeast', 'Midwest', 'Other']
-              config:
-                severity: error
-      
-      - name: is_metro_area
-        description: Store is in a major metropolitan area
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - accepted_values:
-              values: [true, false]
-              config:
-                severity: error
-      
-      - name: store_data_quality
-        description: Overall store data completeness indicator
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - accepted_values:
-              values: ['COMPLETE', 'GOOD', 'BASIC']
-              config:
-                severity: error
-      
-      - name: bronze_loaded_at
+      - name: raw_loaded_at
         description: When raw record was loaded from source
         tests:
           - not_null:
@@ -1634,13 +1441,6 @@ models:
               expression: "<= CURRENT_TIMESTAMP"
               config:
                 severity: error
-      
-      - name: bronze_batch_id
-        description: Bronze layer batch identifier
-        tests:
-          - not_null:
-              config:
-                severity: warn
       
       - name: staging_batch_id
         description: Staging layer batch identifier

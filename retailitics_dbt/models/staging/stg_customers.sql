@@ -184,8 +184,9 @@ staging_cleaned AS (
         TRIM(REGEXP_REPLACE(first_name, '[^\x20-\x7E]', '', 'g')) AS first_name_clean,
         TRIM(REGEXP_REPLACE(last_name, '[^\x20-\x7E]', '', 'g')) AS last_name_clean,
 
-        CURRENT_TIMESTAMP AS _loaded_at,
-        '{{ run_started_at }}' AS _batch_id,
+        modified_date AS raw_loaded_at,
+        CURRENT_TIMESTAMP AS staging_loaded_at,
+        '{{ run_started_at }}' AS staging_batch_id,
         '{{ var("source_system", "RETAIL_S3") }}' AS _source_system,
 
         MD5(

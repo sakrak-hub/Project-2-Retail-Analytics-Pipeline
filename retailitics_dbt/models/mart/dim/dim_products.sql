@@ -12,7 +12,7 @@
 WITH new_and_changed AS (
     SELECT 
         stg.*
-    FROM {{ ref('stg_products') }} stg
+    FROM {{ ref('intmd_products') }} stg
     LEFT JOIN {{ this }} dim
         ON stg.product_id = dim.product_id
         AND dim.is_current = TRUE
@@ -150,6 +150,6 @@ SELECT
     TRUE AS is_current,
     CURRENT_TIMESTAMP AS created_at,
     CURRENT_TIMESTAMP AS updated_at
-FROM {{ ref('stg_products') }}
+FROM {{ ref('intmd_products') }} 
 
 {% endif %}

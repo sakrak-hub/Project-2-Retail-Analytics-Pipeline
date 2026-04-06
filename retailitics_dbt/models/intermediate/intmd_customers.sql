@@ -7,11 +7,11 @@
     )
 }}
 
-WITH stg AS (
+WITH staging AS (
     SELECT * FROM {{ ref('stg_customers') }}
     
     {% if is_incremental() %}
-    WHERE _loaded_at > (SELECT MAX(_loaded_at) FROM {{ this }})
+    WHERE staging_loaded_at > (SELECT MAX(intermediate_loaded_at) FROM {{ this }})
     {% endif %}
 ),
 
@@ -119,7 +119,6 @@ intmd_cleaned AS (
         missing_city_flag,
         missing_state_flag,
         missing_zip_code_flag,
-        invalid_email_flag,
         negative_ltv_flag,
 
         address_city_mismatch_flag,
@@ -138,7 +137,6 @@ intmd_cleaned AS (
             missing_city_flag +
             missing_state_flag +
             missing_zip_code_flag +
-            invalid_email_flag +
             negative_ltv_flag +
             address_city_mismatch_flag +
             address_state_mismatch_flag +
@@ -155,7 +153,6 @@ intmd_cleaned AS (
                 missing_city_flag +
                 missing_state_flag +
                 missing_zip_code_flag +
-                invalid_email_flag +
                 negative_ltv_flag +
                 address_city_mismatch_flag +
                 address_state_mismatch_flag +
@@ -170,7 +167,6 @@ intmd_cleaned AS (
                 missing_city_flag +
                 missing_state_flag +
                 missing_zip_code_flag +
-                invalid_email_flag +
                 negative_ltv_flag +
                 address_city_mismatch_flag +
                 address_state_mismatch_flag +
@@ -182,25 +178,24 @@ intmd_cleaned AS (
             ELSE 'POOR'
         END AS quality_tier,
 
-        _loaded_at,
-        _batch_id,
+        staging_loaded_at, 
+        staging_batch_id,
+        '{{ invocation_id }}' AS intermediate_batch_id,
         _source_system,
-        CURRENT_TIMESTAMP AS _intmd_loaded_at
+        CURRENT_TIMESTAMP AS intermediate_loaded_at
         
     FROM customers_with_zip_lookup
 
     WHERE missing_email_flag = 0           
       AND missing_city_flag = 0            
       AND missing_state_flag = 0           
-      AND missing_zip_code_flag = 0        
-      AND invalid_email_flag = 0           
+      AND missing_zip_code_flag = 0                 
       AND (
           missing_email_flag +
           missing_phone_flag +
           missing_city_flag +
           missing_state_flag +
           missing_zip_code_flag +
-          invalid_email_flag +
           negative_ltv_flag
       ) <= 2 
 )

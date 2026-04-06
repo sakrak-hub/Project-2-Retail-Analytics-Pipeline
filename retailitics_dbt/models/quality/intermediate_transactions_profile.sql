@@ -2,7 +2,7 @@
     config(
         materialized='incremental',
         unique_key='profile_date',
-        tags=['staging', 'quality', 'profile']
+        tags=['intermediate', 'quality', 'profile']
     )
 }}
 
@@ -15,12 +15,12 @@ WITH revenue_summed AS(
                 ELSE 0 
         END as deduped_revenue
     
-    FROM {{ ref('stg_transactions') }}
+    FROM {{ ref('intmd_transactions') }} 
 ),
 
-staging_daily AS (
+intermediate_daily AS (
     SELECT 
-        DATE_TRUNC('day', staging_processed_at) AS profile_date,
+        DATE_TRUNC('day', intermediate_processed_at) AS profile_date,
         
         COUNT(*) AS total_line_items,
         COUNT(DISTINCT line_item_key) AS unique_line_items,
@@ -79,15 +79,15 @@ staging_daily AS (
             - (SUM(CASE WHEN data_quality_status = 'CORRECTED' THEN 1 ELSE 0 END) * 5.0 / COUNT(*))
             - (SUM(CASE WHEN data_quality_status = 'INCOMPLETE' THEN 1 ELSE 0 END) * 10.0 / COUNT(*))
             - (SUM(CASE WHEN is_refund THEN 1 ELSE 0 END) * 2.0 / COUNT(*))
-        ) AS transaction_staging_quality_score
+        ) AS transaction_intermediate_quality_score
         
     FROM revenue_summed
     
     {% if is_incremental() %}
-    WHERE DATE_TRUNC('day', staging_processed_at) > (SELECT MAX(profile_date) FROM {{ this }})
+    WHERE DATE_TRUNC('day', intermediate_processed_at) > (SELECT MAX(profile_date) FROM {{ this }})
     {% endif %}
     
-    GROUP BY DATE_TRUNC('day', staging_processed_at)
+    GROUP BY DATE_TRUNC('day', intermediate_processed_at)
 ),
 
 profile_enriched AS (
@@ -107,9 +107,9 @@ profile_enriched AS (
         END AS transaction_size_health,
         
         CASE 
-            WHEN transaction_staging_quality_score >= 98 THEN 'Excellent'
-            WHEN transaction_staging_quality_score >= 95 THEN 'Good'
-            WHEN transaction_staging_quality_score >= 90 THEN 'Fair'
+            WHEN transaction_intermediate_quality_score >= 98 THEN 'Excellent'
+            WHEN transaction_intermediate_quality_score >= 95 THEN 'Good'
+            WHEN transaction_intermediate_quality_score >= 90 THEN 'Fair'
             ELSE 'Needs Review'
         END AS health_status,
         
@@ -133,7 +133,7 @@ profile_enriched AS (
         END AS promotion_intensity,
         
         CASE 
-            WHEN transaction_staging_quality_score < 90 THEN TRUE
+            WHEN transaction_intermediate_quality_score < 90 THEN TRUE
             WHEN clean_pct < 90 THEN TRUE
             WHEN refund_pct > 10 THEN TRUE
             WHEN total_line_items < 1000 THEN TRUE  -- Unusually low volume
@@ -149,7 +149,7 @@ profile_enriched AS (
         'transaction' AS entity_type,
         'line_item' AS grain_level
         
-    FROM staging_daily
+    FROM intermediate_daily
 )
 
 SELECT * FROM profile_enriched

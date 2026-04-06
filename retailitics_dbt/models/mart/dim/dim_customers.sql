@@ -11,21 +11,21 @@
 
 WITH new_and_changed AS (
     SELECT 
-        stg.*
-    FROM {{ ref('stg_customers') }} stg
+        intmd.*
+    FROM {{ ref('intmd_customers') }} intmd
     LEFT JOIN {{ this }} dim
-        ON stg.customer_id = dim.customer_id
+        ON intmd.customer_id = dim.customer_id
         AND dim.is_current = TRUE
     WHERE 
         dim.customer_key IS NULL
         OR (
-            stg.street_address IS DISTINCT FROM dim.street_address
-            OR stg.city IS DISTINCT FROM dim.city
-            OR stg.state IS DISTINCT FROM dim.state
-            OR stg.zip_code IS DISTINCT FROM dim.zip_code
-            OR stg.customer_segment IS DISTINCT FROM dim.customer_segment
-            OR stg.ltv_category IS DISTINCT FROM dim.ltv_category
-            OR stg.customer_tenure_category IS DISTINCT FROM dim.customer_tenure_category
+            intmd.street_address IS DISTINCT FROM dim.street_address
+            OR intmd.city IS DISTINCT FROM dim.city
+            OR intmd.state IS DISTINCT FROM dim.state
+            OR intmd.zip_code IS DISTINCT FROM dim.zip_code
+            OR intmd.customer_segment IS DISTINCT FROM dim.customer_segment
+            OR intmd.ltv_category IS DISTINCT FROM dim.ltv_category
+            OR intmd.customer_tenure_category IS DISTINCT FROM dim.customer_tenure_category
         )
 ),
 
@@ -68,8 +68,8 @@ closed_records AS (
         dim.created_at,
         CURRENT_TIMESTAMP AS updated_at
     FROM {{ this }} dim
-    INNER JOIN new_and_changed stg
-        ON dim.customer_id = stg.customer_id
+    INNER JOIN new_and_changed intmd
+        ON dim.customer_id = intmd.customer_id
         AND dim.is_current = TRUE
 ),
 
@@ -161,6 +161,6 @@ SELECT
     TRUE AS is_current,
     CURRENT_TIMESTAMP AS created_at,
     CURRENT_TIMESTAMP AS updated_at
-FROM {{ ref('stg_customers') }}
+FROM {{ ref('intmd_customers') }}
 
 {% endif %}

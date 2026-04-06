@@ -11,19 +11,19 @@
 
 WITH new_and_changed AS (
     SELECT 
-        stg.*
-    FROM {{ ref('stg_stores') }} stg
+        intmd.*
+    FROM {{ ref('intmd_stores') }} intmd
     LEFT JOIN {{ this }} dim
-        ON stg.store_id = dim.store_id
+        ON intmd.store_id = dim.store_id
         AND dim.is_current = TRUE
     WHERE 
         dim.store_key IS NULL
         OR (
-            stg.manager IS DISTINCT FROM dim.manager
-            OR stg.store_type IS DISTINCT FROM dim.store_type
-            OR stg.store_category IS DISTINCT FROM dim.store_category
-            OR stg.is_fully_operational IS DISTINCT FROM dim.is_fully_operational
-            OR stg.region IS DISTINCT FROM dim.region
+            intmd.manager IS DISTINCT FROM dim.manager
+            OR intmd.store_type IS DISTINCT FROM dim.store_type
+            OR intmd.store_category IS DISTINCT FROM dim.store_category
+            OR intmd.is_fully_operational IS DISTINCT FROM dim.is_fully_operational
+            OR intmd.region IS DISTINCT FROM dim.region
         )
 ),
 
@@ -58,8 +58,8 @@ closed_records AS (
         dim.created_at,
         CURRENT_TIMESTAMP AS updated_at
     FROM {{ this }} dim
-    INNER JOIN new_and_changed stg
-        ON dim.store_id = stg.store_id
+    INNER JOIN new_and_changed intmd
+        ON dim.store_id = intmd.store_id
         AND dim.is_current = TRUE
 ),
 
@@ -135,6 +135,6 @@ SELECT
     TRUE AS is_current,
     CURRENT_TIMESTAMP AS created_at,
     CURRENT_TIMESTAMP AS updated_at
-FROM {{ ref('stg_stores') }}
+FROM {{ ref('intmd_stores') }}
 
 {% endif %}

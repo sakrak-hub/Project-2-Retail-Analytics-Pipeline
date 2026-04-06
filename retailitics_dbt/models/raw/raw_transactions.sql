@@ -32,5 +32,5 @@ r.discount_percent,
 r.line_total
 from
 read_parquet('s3://my-retail-2026-analytics-5805/retail_data/transactions/*.parquet') r
-INNER JOIN {{ ref('s3_metadata') }} m
+INNER JOIN {{ ref('s3_transactions_metadata') }} m
 ON regexp_extract(r.transaction_id, 'TXN(\d{8})', 1) = m.date_key

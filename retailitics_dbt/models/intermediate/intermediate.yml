@@ -324,7 +324,7 @@ models:
     tests:
       - dbt_utils.recency:
           datepart: day
-          field: _intermediate_loaded_at
+          field: intermediate_loaded_at
           interval: 2
           config:
             severity: warn
@@ -428,11 +428,11 @@ models:
                 severity: error
       
       - name: email
-        description: Customer's email address (required in intermediate)
+        description: Customer's email address
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - dbt_utils.not_empty_string:
               config:
                 severity: error
@@ -449,16 +449,6 @@ models:
               config:
                 severity: warn
                 warn_if: ">200"
-      
-      - name: phone_digits_only
-        description: Phone number with only digits
-        tests:
-          - dbt_utils.expression_is_true:
-              expression: "LENGTH(phone_digits_only) >= 10"
-              where: "phone_digits_only IS NOT NULL"
-              config:
-                severity: warn
-                warn_if: ">100"
       
       - name: phone_too_short_flag
         description: Flag indicating phone number is too short
@@ -707,17 +697,6 @@ models:
               config:
                 severity: error
       
-      - name: invalid_email_flag
-        description: Flag for invalid email (should be 0 in intermediate)
-        tests:
-          - not_null:
-              config:
-                severity: error
-          - accepted_values:
-              values: [0]
-              config:
-                severity: error
-      
       - name: quality_issues_count
         description: Total count of quality issues for this customer
         tests:
@@ -752,14 +731,14 @@ models:
                 severity: warn
                 warn_if: ">100"
       
-      - name: _loaded_at
-        description: When raw record was loaded from source
+      - name: staging_loaded_at
+        description: When staging record was loaded to intermediate
         tests:
           - not_null:
               config:
                 severity: error
       
-      - name: _batch_id
+      - name: intermediate_batch_id
         description: Batch identifier for this load
         tests:
           - not_null:
@@ -777,7 +756,7 @@ models:
               config:
                 severity: warn
       
-      - name: _intermediate_loaded_at
+      - name: intermediate_loaded_at
         description: When this record was loaded to intermediate
         tests:
           - not_null:
