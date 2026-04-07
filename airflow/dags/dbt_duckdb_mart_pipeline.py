@@ -735,16 +735,17 @@ def update_motherduck_db(**context):
 
     source_db_path = '/opt/airflow/dbt/warehouse_bi.duckdb'
 
+    queries_list = [
+        "DETACH DATABASE IF EXISTS warehouse_bi",
+        "DROP DATABASE IF EXISTS warehouse_bi",
+        "CREATE OR REPLACE DATABASE warehouse_bi FROM '/opt/airflow/dbt/warehouse_bi.duckdb'"]
+
+    
     try:
         md_con = duckdb.connect('md:')
 
-        query = """
-        DETACH DATABASE IF EXISTS warehouse_bi;
-        DROP DATABASE IF EXISTS warehouse_bi;
-        CREATE OR REPLACE DATABASE warehouse_bi 
-        FROM '/mnt/d/Projects/Project-2-Retail-Analytics-Pipeline/retailitics_dbt/warehouse_bi.duckdb';
-        """
-        md_con.execute(query)
+        for query in queries_list:
+            md_con.execute(query)
 
         df = md_con.execute("SELECT * FROM duckdb_tables() WHERE database_name='warehouse_bi';").fetchdf()
 
@@ -842,6 +843,10 @@ with DAG(
         python_callable=sync_bi_database
     )
 
+    update_motherduck_db = PythonOperator(
+        task_id = 'update_motherduck_db',
+        python_callable=update_motherduck_db
+    )
     gold_layer_complete = EmptyOperator(
         task_id='gold_layer_complete',
         trigger_rule='all_success'
@@ -860,6 +865,6 @@ with DAG(
 
     gold_quality_gate >> generate_metrics
 
-    generate_metrics >> [export_metrics, generate_docs] >> create_sync_bi_data
+    generate_metrics >> [export_metrics, generate_docs] >> create_sync_bi_data >> update_motherduck_db
 
-    create_sync_bi_data >> gold_layer_complete
+    update_motherduck_db >> gold_layer_complete

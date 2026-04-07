@@ -14,7 +14,7 @@ WITH sales_transactions AS (
     
     {% if is_incremental() %}
     WHERE intermediate_loaded_at > (SELECT MAX(fact_loaded_at) FROM {{ this }})
-    {% endif %}
+    {% endif %} 
 ),
 
 sales_with_dimension AS (
@@ -97,7 +97,7 @@ sales_with_dimension AS (
         txn.had_high_unit_price,
 
         txn.raw_loaded_at AS date_of_creation,
-        txn.bronze_processed_at,
+        txn.staging_processed_at,
         txn.intermediate_processed_at AS fact_loaded_at,
         txn._source_system,
         CURRENT_TIMESTAMP AS created_at
