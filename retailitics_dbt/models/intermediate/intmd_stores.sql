@@ -54,7 +54,7 @@ intermediate_final AS (
         store_phone,
         opening_date,
         days_since_opening,
-        years_since_opening,
+        years_since_opening, 
         store_age_category,
 
         CASE 

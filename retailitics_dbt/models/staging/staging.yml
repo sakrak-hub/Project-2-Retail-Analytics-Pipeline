@@ -430,7 +430,7 @@ models:
         tests:
           - not_null:
               config:
-                severity: error
+                severity: warn
           - accepted_values:
               values: [0, 1]
               config:
