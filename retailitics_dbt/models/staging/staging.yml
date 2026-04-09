@@ -342,7 +342,7 @@ models:
               where: "discount_amount IS NOT NULL"
               config:
                 severity: warn
-      
+
       - name: line_total
         description: Total for this line item
         tests:
@@ -435,7 +435,7 @@ models:
               values: [0, 1]
               config:
                 severity: error
-      
+
       - name: negative_quantity_flag
         description: Flag for negative quantity values
         tests:

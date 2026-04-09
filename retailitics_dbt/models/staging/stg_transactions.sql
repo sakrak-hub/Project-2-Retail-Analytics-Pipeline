@@ -129,6 +129,7 @@ staging_cleaned AS (
         ROUND(sd.unit_price,2) AS unit_price,
         sd.discount_percent,
         (sd.quantity * sd.unit_price * (sd.discount_percent/100)) AS discount_amount,
+        ROUND((sd.quantity * sd.unit_price * (1-(sd.discount_percent/100))),2) AS calculated_line_total,
         sd.line_total,
 
         CASE WHEN sd.transaction_id IS NULL THEN 1 ELSE 0 END AS missing_transaction_id_flag,
@@ -139,9 +140,10 @@ staging_cleaned AS (
         CASE WHEN sd.cashier_id IS NULL OR TRIM(cashier_id) = '' THEN 1 ELSE 0 END AS missing_cashier_id_flag,
         CASE WHEN sd.payment_method IS NULL OR TRIM(payment_method) = '' THEN 1 ELSE 0 END AS missing_payment_method_flag,
 
-        CASE WHEN sd.quantity < 0 THEN 1 ELSE 0 END AS negative_quantity_flag,
-        CASE WHEN sd.total_amount < 0 THEN 1 ELSE 0 END AS negative_amount_flag,
-        CASE WHEN sd.line_total < 0 THEN 1 ELSE 0 END AS negative_line_total_flag,
+        CASE WHEN ABS(ROUND((sd.quantity * sd.unit_price * (1-(sd.discount_percent/100))),2) - sd.line_total)>100 THEN 1 ELSE 0 END AS line_total_discrepancy_flag,
+        CASE WHEN sd.quantity < 0 AND (sd.status != 'Refunded' OR sd.refund_reason IS NULL) THEN 1 ELSE 0 END AS negative_quantity_flag,
+        CASE WHEN sd.total_amount < 0 AND (sd.status != 'Refunded' OR sd.refund_reason IS NULL) THEN 1 ELSE 0 END AS negative_amount_flag,
+        CASE WHEN sd.line_total < 0 AND (sd.status != 'Refunded' OR sd.refund_reason IS NULL) THEN 1 ELSE 0 END AS negative_line_total_flag,
 
         CASE WHEN sd.total_amount IS NULL OR total_amount = 0 THEN 1 ELSE 0 END AS zero_total_amount_flag,
         CASE WHEN sd.quantity IS NULL OR quantity = 0 THEN 1 ELSE 0 END AS zero_quantity_flag,

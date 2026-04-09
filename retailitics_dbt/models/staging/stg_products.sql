@@ -33,7 +33,7 @@ cleaned_product_name AS(
     DISTINCT(TRIM(REGEXP_REPLACE(product_name, '[^\x20-\x7E]', '', 'g'))) AS cleaned_product_name,
     product_name as raw_product_name,
     product_id
-    FROM raw_db.raw_products
+    FROM {{ ref('raw_products') }}
     ORDER BY 1
     )
     SELECT 
@@ -181,8 +181,8 @@ staging_cleaned AS (
         'raw_products' AS _source_table
 
     FROM source_data sd
-    LEFT JOIN cleaned_product_name pn 
-    ON pn.product_id = sd.product_id
+    INNER JOIN cleaned_product_name pn 
+    ON sd.product_id=pn.product_id
 )
 
 SELECT * FROM staging_cleaned

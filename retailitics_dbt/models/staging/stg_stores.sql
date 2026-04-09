@@ -176,7 +176,7 @@ staging_cleaned AS (
         'raw_stores' AS _source_table
 
     FROM source_data sd 
-    LEFT JOIN store_name_clean sc 
+    INNER JOIN store_name_clean sc 
     ON sd.store_id = sc.store_id 
 )
 

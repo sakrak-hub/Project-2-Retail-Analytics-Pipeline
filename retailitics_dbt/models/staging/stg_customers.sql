@@ -31,10 +31,12 @@ staging_cleaned AS (
     SELECT
         customer_id,
 
-        TRIM(first_name) AS first_name,
-        TRIM(last_name) AS last_name,
+        TRIM(REGEXP_REPLACE(first_name, '[^\x20-\x7E]', '', 'g')) AS first_name,
+        first_name AS raw_first_name,
+        TRIM(REGEXP_REPLACE(last_name, '[^\x20-\x7E]', '', 'g')) AS last_name,
+        last_name AS raw_last_name,
 
-        TRIM(first_name) || ' ' || TRIM(last_name) AS full_name, 
+        TRIM(REGEXP_REPLACE(first_name, '[^\x20-\x7E]', '', 'g')) || ' ' || TRIM(REGEXP_REPLACE(last_name, '[^\x20-\x7E]', '', 'g')) AS full_name, 
         CASE 
             WHEN email IS NULL OR TRIM(email) = '' THEN NULL
             WHEN LOWER(TRIM(REGEXP_REPLACE(email, ' at ', '@', 'g'))) LIKE '%@%.%' THEN LOWER(TRIM(REGEXP_REPLACE(email, ' at ', '@', 'g')))
