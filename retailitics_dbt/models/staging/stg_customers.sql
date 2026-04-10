@@ -27,56 +27,108 @@ WITH source_data AS (
     {% endif %}
 ),
 
+phone_detailing AS(
+    WITH phone_extract AS(
+        SELECT
+        customer_id,
+        CASE
+        WHEN '+1' IN regexp_replace(phone, '[-().]','','g') OR  STARTS_WITH(regexp_replace(phone, '[-().]','','g'),'001') THEN '+1'
+        ELSE NULL 
+        END AS country_code,
+
+        CASE 
+        WHEN 'x' IN phone THEN split_part(phone, 'x', 2)
+        ELSE NULL
+        END AS extension,
+
+        regexp_replace(phone, '[-().]','','g') AS cleaned_phone,
+
+        phone as phone_unedited
+        FROM raw_db.raw_customers 
+    )
+
+    SELECT 
+    customer_id,
+    phone_unedited,
+    country_code,
+    CASE
+        WHEN LENGTH(cleaned_phone) <= 10 
+            AND cleaned_phone NOT LIKE '+%'
+            AND cleaned_phone NOT LIKE '001%'
+            AND cleaned_phone NOT LIKE '%x%'
+        THEN cleaned_phone
+        
+        WHEN (cleaned_phone LIKE '+1%' OR cleaned_phone LIKE '001%') 
+            AND cleaned_phone LIKE '%x%'
+        THEN regexp_extract(cleaned_phone, '^(?:\+1|001)(\d+?)x', 1)
+        
+        WHEN (cleaned_phone LIKE '+1%' OR cleaned_phone LIKE '001%')
+            AND cleaned_phone NOT LIKE '%x%'
+        THEN regexp_replace(cleaned_phone, '^(?:\+1|001)', '')
+        
+        WHEN cleaned_phone LIKE '%x%'
+            AND cleaned_phone NOT LIKE '+%'
+            AND cleaned_phone NOT LIKE '001%'
+        THEN regexp_extract(cleaned_phone, '^(\d+?)x', 1)
+        
+        ELSE cleaned_phone
+    END AS extracted_phone,
+    cleaned_phone,
+    extension
+    FROM phone_extract
+),
+
 staging_cleaned AS (
     SELECT
-        customer_id,
+        sd.customer_id,
 
-        TRIM(REGEXP_REPLACE(first_name, '[^\x20-\x7E]', '', 'g')) AS first_name,
-        first_name AS raw_first_name,
-        TRIM(REGEXP_REPLACE(last_name, '[^\x20-\x7E]', '', 'g')) AS last_name,
-        last_name AS raw_last_name,
+        TRIM(REGEXP_REPLACE(sd.first_name, '[^\x20-\x7E]', '', 'g')) AS first_name,
+        sd.first_name AS raw_first_name,
+        TRIM(REGEXP_REPLACE(sd.last_name, '[^\x20-\x7E]', '', 'g')) AS last_name,
+        sd.last_name AS raw_last_name,
 
-        TRIM(REGEXP_REPLACE(first_name, '[^\x20-\x7E]', '', 'g')) || ' ' || TRIM(REGEXP_REPLACE(last_name, '[^\x20-\x7E]', '', 'g')) AS full_name, 
+        TRIM(REGEXP_REPLACE(sd.first_name, '[^\x20-\x7E]', '', 'g')) || ' ' || TRIM(REGEXP_REPLACE(sd.last_name, '[^\x20-\x7E]', '', 'g')) AS full_name, 
         CASE 
-            WHEN email IS NULL OR TRIM(email) = '' THEN NULL
-            WHEN LOWER(TRIM(REGEXP_REPLACE(email, ' at ', '@', 'g'))) LIKE '%@%.%' THEN LOWER(TRIM(REGEXP_REPLACE(email, ' at ', '@', 'g')))
-            WHEN LOWER(TRIM(REGEXP_REPLACE(email, ' at ', '@', 'g'))) NOT LIKE '%@%.%' THEN NULL
+            WHEN sd.email IS NULL OR TRIM(sd.email) = '' THEN NULL
+            WHEN LOWER(TRIM(REGEXP_REPLACE(sd.email, ' at ', '@', 'g'))) LIKE '%@%.%' THEN LOWER(TRIM(REGEXP_REPLACE(sd.email, ' at ', '@', 'g')))
+            WHEN LOWER(TRIM(REGEXP_REPLACE(sd.email, ' at ', '@', 'g'))) NOT LIKE '%@%.%' THEN NULL
             ELSE NULL
         END AS email,
 
-        REGEXP_REPLACE(phone, '[^0-9x+()-]', '', 'g') AS phone,
-    
-        phone AS phone_raw,
+        pd.phone_unedited AS raw_phone_number,
+        pd.country_code AS country_code,
+        pd.extracted_phone AS phone,
+        pd.extension AS extension,
         
         CASE 
-            WHEN phone IS NULL OR TRIM(phone) = '' THEN 1
-            WHEN LENGTH(REGEXP_REPLACE(phone, '[^0-9]', '', 'g')) < 7 THEN 1
+            WHEN pd.extracted_phone IS NULL OR TRIM(pd.extracted_phone) = '' THEN 1
+            WHEN LENGTH(REGEXP_REPLACE(pd.extracted_phone, '[^0-9]', '', 'g')) < 7 THEN 1
             ELSE 0
         END AS invalid_phone_flag,
 
         CASE 
-            WHEN address IS NULL OR TRIM(address) = '' THEN NULL
-            WHEN POSITION(E'\n' IN address) > 0 THEN 
-                TRIM(SPLIT_PART(address, E'\n', 1))
-            WHEN POSITION(',' IN address) > 0 THEN 
-                TRIM(SPLIT_PART(address, ',', 1))
-            ELSE TRIM(address)
+            WHEN sd.address IS NULL OR TRIM(sd.address) = '' THEN NULL
+            WHEN POSITION(E'\n' IN sd.address) > 0 THEN 
+                TRIM(SPLIT_PART(sd.address, E'\n', 1))
+            WHEN POSITION(',' IN sd.address) > 0 THEN 
+                TRIM(SPLIT_PART(sd.address, ',', 1))
+            ELSE TRIM(sd.address)
         END AS street_address,
 
-        address AS address_raw,
+        sd.address AS address_raw,
 
-        TRIM(city) AS city,
-        TRIM(state) AS state,
-        TRIM(zip_code) AS zip_code,
+        TRIM(sd.city) AS city,
+        TRIM(sd.state) AS state,
+        TRIM(sd.zip_code) AS zip_code,
 
         CASE
-            WHEN zip_code::VARCHAR IN 
-            (SELECT zip_code FROM {{ ref('us_zip_fips_county')}} ) THEN 0
+            WHEN sd.zip_code::VARCHAR IN 
+            (SELECT sd.zip_code FROM {{ ref('us_zip_fips_county')}} ) THEN 0
             ELSE 1
         END AS invalid_zip_code_flag,
 
         CASE
-            WHEN (state,zip_code) IN(
+            WHEN (sd.state,sd.zip_code) IN(
                 SELECT 
                 a.state, a.zip_code
                 FROM {{ ref('raw_customers')}} a 
@@ -88,124 +140,126 @@ staging_cleaned AS (
         END AS state_zip_mismatch_flag,
 
         CASE 
-            WHEN address IS NULL THEN 0
-            WHEN city IS NOT NULL AND address NOT LIKE '%' || city || '%' THEN 1
+            WHEN sd.address IS NULL THEN 0
+            WHEN sd.city IS NOT NULL AND address NOT LIKE '%' || sd.city || '%' THEN 1
             ELSE 0
         END AS address_city_mismatch_flag,
 
         CASE 
-            WHEN address IS NULL THEN 0
-            WHEN state IS NOT NULL AND address NOT LIKE '%' || state || '%' THEN 1
+            WHEN sd.address IS NULL THEN 0
+            WHEN sd.state IS NOT NULL AND sd.address NOT LIKE '%' || sd.state || '%' THEN 1
             ELSE 0
         END AS address_state_mismatch_flag,
 
         CASE 
-            WHEN address IS NULL THEN 0
-            WHEN zip_code IS NOT NULL AND address NOT LIKE '%' || zip_code || '%' THEN 1
+            WHEN sd.address IS NULL THEN 0
+            WHEN sd.zip_code IS NOT NULL AND sd.address NOT LIKE '%' || sd.zip_code || '%' THEN 1
             ELSE 0
         END AS address_zip_mismatch_flag,
 
-        CASE WHEN city IS NULL OR TRIM(city) = '' THEN 1 ELSE 0 END AS missing_city_flag,
-        CASE WHEN state IS NULL OR TRIM(state) = '' THEN 1 ELSE 0 END AS missing_state_flag,
-        CASE WHEN zip_code IS NULL OR TRIM(zip_code) = '' THEN 1 ELSE 0 END AS missing_zip_code_flag,
+        CASE WHEN sd.city IS NULL OR TRIM(sd.city) = '' THEN 1 ELSE 0 END AS missing_city_flag,
+        CASE WHEN sd.state IS NULL OR TRIM(sd.state) = '' THEN 1 ELSE 0 END AS missing_state_flag,
+        CASE WHEN sd.zip_code IS NULL OR TRIM(sd.zip_code) = '' THEN 1 ELSE 0 END AS missing_zip_code_flag,
 
         CASE 
-            WHEN date_of_birth IS NULL OR TRIM(date_of_birth::VARCHAR) = '' THEN NULL
-            ELSE TRY_CAST(date_of_birth AS DATE)
+            WHEN sd.date_of_birth IS NULL OR TRIM(sd.date_of_birth::VARCHAR) = '' THEN NULL
+            ELSE TRY_CAST(sd.date_of_birth AS DATE)
         END AS date_of_birth,
 
         CASE 
-            WHEN date_of_birth IS NULL OR TRIM(date_of_birth::VARCHAR) = '' THEN NULL
-            ELSE DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE)
+            WHEN sd.date_of_birth IS NULL OR TRIM(sd.date_of_birth::VARCHAR) = '' THEN NULL
+            ELSE DATE_DIFF('year', TRY_CAST(sd.date_of_birth AS DATE), CURRENT_DATE)
         END AS age,
 
         CASE 
-            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE)<18 THEN 'Under 18'
-            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE) BETWEEN 18 AND 24 THEN '18-24'
-            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE) BETWEEN 25 AND 34 THEN '25-34'
-            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE) BETWEEN 35 AND 44 THEN '35-44'
-            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE) BETWEEN 45 AND 54 THEN '45-54'
-            WHEN DATE_DIFF('year', TRY_CAST(date_of_birth AS DATE), CURRENT_DATE) BETWEEN 55 AND 64 THEN '55-64'
+            WHEN DATE_DIFF('year', TRY_CAST(sd.date_of_birth AS DATE), CURRENT_DATE)<18 THEN 'Under 18'
+            WHEN DATE_DIFF('year', TRY_CAST(sd.date_of_birth AS DATE), CURRENT_DATE) BETWEEN 18 AND 24 THEN '18-24'
+            WHEN DATE_DIFF('year', TRY_CAST(sd.date_of_birth AS DATE), CURRENT_DATE) BETWEEN 25 AND 34 THEN '25-34'
+            WHEN DATE_DIFF('year', TRY_CAST(sd.date_of_birth AS DATE), CURRENT_DATE) BETWEEN 35 AND 44 THEN '35-44'
+            WHEN DATE_DIFF('year', TRY_CAST(sd.date_of_birth AS DATE), CURRENT_DATE) BETWEEN 45 AND 54 THEN '45-54'
+            WHEN DATE_DIFF('year', TRY_CAST(sd.date_of_birth AS DATE), CURRENT_DATE) BETWEEN 55 AND 64 THEN '55-64'
             ELSE '65+'
         END AS age_group,
 
         CASE 
-            WHEN UPPER(TRIM(gender)) IN ('MALE', 'M') THEN 'Male'
-            WHEN UPPER(TRIM(gender)) IN ('FEMALE', 'F') THEN 'Female'
-            WHEN UPPER(TRIM(gender)) = 'OTHER' THEN 'Other'
+            WHEN UPPER(TRIM(sd.gender)) IN ('MALE', 'M') THEN 'Male'
+            WHEN UPPER(TRIM(sd.gender)) IN ('FEMALE', 'F') THEN 'Female'
+            WHEN UPPER(TRIM(sd.gender)) = 'OTHER' THEN 'Other'
             ELSE NULL
         END AS gender,
 
         CASE 
-            WHEN registration_date IS NULL OR TRIM(registration_date::VARCHAR) = '' THEN NULL
-            ELSE TRY_CAST(registration_date AS DATE)
+            WHEN sd.registration_date IS NULL OR TRIM(sd.registration_date::VARCHAR) = '' THEN NULL
+            ELSE TRY_CAST(sd.registration_date AS DATE)
         END AS registration_date,
 
         CASE 
-            WHEN registration_date IS NULL OR TRIM(registration_date::VARCHAR) = '' THEN NULL
-            ELSE DATE_DIFF('day', TRY_CAST(registration_date AS DATE), CURRENT_DATE)
+            WHEN sd.registration_date IS NULL OR TRIM(sd.registration_date::VARCHAR) = '' THEN NULL
+            ELSE DATE_DIFF('day', TRY_CAST(sd.registration_date AS DATE), CURRENT_DATE)
         END AS days_since_registration,
 
         CASE
-            WHEN DATE_DIFF('month', TRY_CAST(registration_date AS DATE), CURRENT_DATE)>24 THEN 'Loyal (2+ years)'
-            WHEN DATE_DIFF('month', TRY_CAST(registration_date AS DATE), CURRENT_DATE) BETWEEN 12 AND 24 THEN 'Established (1-2 years)'
-            WHEN DATE_DIFF('month', TRY_CAST(registration_date AS DATE), CURRENT_DATE)>24 BETWEEN 3 AND 12 THEN 'Recent (3-12 months)'
+            WHEN DATE_DIFF('month', TRY_CAST(sd.registration_date AS DATE), CURRENT_DATE)>24 THEN 'Loyal (2+ years)'
+            WHEN DATE_DIFF('month', TRY_CAST(sd.registration_date AS DATE), CURRENT_DATE) BETWEEN 12 AND 24 THEN 'Established (1-2 years)'
+            WHEN DATE_DIFF('month', TRY_CAST(sd.registration_date AS DATE), CURRENT_DATE)>24 BETWEEN 3 AND 12 THEN 'Recent (3-12 months)'
             ELSE 'New (< 3 months)'
         END AS customer_tenure_category,
 
-        COALESCE(loyalty_member, FALSE) AS loyalty_member,
+        COALESCE(sd.loyalty_member, FALSE) AS loyalty_member,
 
         CASE 
-            WHEN UPPER(TRIM(preferred_contact)) = 'EMAIL' THEN 'Email'
-            WHEN UPPER(TRIM(preferred_contact)) = 'PHONE' THEN 'Phone'
-            WHEN UPPER(TRIM(preferred_contact)) = 'SMS' THEN 'SMS'
+            WHEN UPPER(TRIM(sd.preferred_contact)) = 'EMAIL' THEN 'Email'
+            WHEN UPPER(TRIM(sd.preferred_contact)) = 'PHONE' THEN 'Phone'
+            WHEN UPPER(TRIM(sd.preferred_contact)) = 'SMS' THEN 'SMS'
             ELSE NULL
         END AS preferred_contact,
 
         CASE 
-            WHEN UPPER(TRIM(customer_segment)) = 'VIP' THEN 'VIP'
-            WHEN UPPER(TRIM(customer_segment)) = 'PREMIUM' THEN 'Premium'
-            WHEN UPPER(TRIM(customer_segment)) = 'REGULAR' THEN 'Regular'
-            WHEN UPPER(TRIM(customer_segment)) = 'BUDGET' THEN 'Budget'
+            WHEN UPPER(TRIM(sd.customer_segment)) = 'VIP' THEN 'VIP'
+            WHEN UPPER(TRIM(sd.customer_segment)) = 'PREMIUM' THEN 'Premium'
+            WHEN UPPER(TRIM(sd.customer_segment)) = 'REGULAR' THEN 'Regular'
+            WHEN UPPER(TRIM(sd.customer_segment)) = 'BUDGET' THEN 'Budget'
             ELSE 'Unknown'
         END AS customer_segment,
 
-        total_lifetime_value,
-        CASE WHEN total_lifetime_value < 0 THEN 1 ELSE 0 END AS negative_ltv_flag,
+        sd.total_lifetime_value,
+        CASE WHEN sd.total_lifetime_value < 0 THEN 1 ELSE 0 END AS negative_ltv_flag,
         CASE 
-            WHEN total_lifetime_value >= 5000 THEN 'High Value'
-            WHEN total_lifetime_value >= 2000 THEN 'Medium Value'
-            WHEN total_lifetime_value >= 500 THEN 'Low Value'
-            WHEN total_lifetime_value < 0 THEN 'Negative'
+            WHEN sd.total_lifetime_value >= 5000 THEN 'High Value'
+            WHEN sd.total_lifetime_value >= 2000 THEN 'Medium Value'
+            WHEN sd.total_lifetime_value >= 500 THEN 'Low Value'
+            WHEN sd.total_lifetime_value < 0 THEN 'Negative'
             ELSE 'Very Low Value'
         END AS ltv_tier,
 
-        CASE WHEN email IS NULL OR TRIM(email) = '' THEN 1 ELSE 0 END AS missing_email_flag,
-        CASE WHEN phone IS NULL OR TRIM(phone) = '' THEN 1 ELSE 0 END AS missing_phone_flag,
+        CASE WHEN sd.email IS NULL OR TRIM(email) = '' THEN 1 ELSE 0 END AS missing_email_flag,
+        CASE WHEN sd.phone IS NULL OR TRIM(phone) = '' THEN 1 ELSE 0 END AS missing_phone_flag,
 
-        TRIM(REGEXP_REPLACE(first_name, '[^\x20-\x7E]', '', 'g')) AS first_name_clean,
-        TRIM(REGEXP_REPLACE(last_name, '[^\x20-\x7E]', '', 'g')) AS last_name_clean,
+        TRIM(REGEXP_REPLACE(sd.first_name, '[^\x20-\x7E]', '', 'g')) AS first_name_clean,
+        TRIM(REGEXP_REPLACE(sd.last_name, '[^\x20-\x7E]', '', 'g')) AS last_name_clean,
 
-        modified_date AS raw_loaded_at,
+        sd.modified_date AS raw_loaded_at,
         CURRENT_TIMESTAMP AS staging_loaded_at,
         '{{ run_started_at }}' AS staging_batch_id,
         '{{ var("source_system", "RETAIL_S3") }}' AS _source_system,
 
         MD5(
-            COALESCE(customer_id, '') || '|' ||
-            COALESCE(first_name, '') || '|' ||
-            COALESCE(last_name, '') || '|' ||
-            COALESCE(email, '') || '|' ||
-            COALESCE(phone, '') || '|' ||
-            COALESCE(city, '') || '|' ||
-            COALESCE(state, '') || '|' ||
-            COALESCE(zip_code, '') || '|' ||
+            COALESCE(sd.customer_id, '') || '|' ||
+            COALESCE(sd.first_name, '') || '|' ||
+            COALESCE(sd.last_name, '') || '|' ||
+            COALESCE(sd.email, '') || '|' ||
+            COALESCE(pd.extracted_phone, '') || '|' ||
+            COALESCE(sd.city, '') || '|' ||
+            COALESCE(sd.state, '') || '|' ||
+            COALESCE(sd.zip_code, '') || '|' ||
             COALESCE(CAST(total_lifetime_value AS VARCHAR), '') 
         ) AS _row_hash,
 
         'raw_customers' AS _source_table
 
-    FROM source_data
+    FROM source_data sd 
+    INNER JOIN phone_detailing pd 
+    ON sd.customer_id = pd.customer_id
 )
 
 SELECT * FROM staging_cleaned
