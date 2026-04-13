@@ -28,54 +28,13 @@ WITH source_data AS (
 ),
 
 phone_detailing AS(
-    WITH phone_extract AS(
-        SELECT
-        customer_id,
-        CASE
-        WHEN '+1' IN regexp_replace(phone, '[-().]','','g') OR  STARTS_WITH(regexp_replace(phone, '[-().]','','g'),'001') THEN '+1'
-        ELSE NULL 
-        END AS country_code,
-
-        CASE 
-        WHEN 'x' IN phone THEN split_part(phone, 'x', 2)
-        ELSE NULL
-        END AS extension,
-
-        regexp_replace(phone, '[-().]','','g') AS cleaned_phone,
-
-        phone as phone_unedited
-        FROM raw_db.raw_customers 
-    )
-
     SELECT 
     customer_id,
     phone_unedited,
     country_code,
-    CASE
-        WHEN LENGTH(cleaned_phone) <= 10 
-            AND cleaned_phone NOT LIKE '+%'
-            AND cleaned_phone NOT LIKE '001%'
-            AND cleaned_phone NOT LIKE '%x%'
-        THEN cleaned_phone
-        
-        WHEN (cleaned_phone LIKE '+1%' OR cleaned_phone LIKE '001%') 
-            AND cleaned_phone LIKE '%x%'
-        THEN regexp_extract(cleaned_phone, '^(?:\+1|001)(\d+?)x', 1)
-        
-        WHEN (cleaned_phone LIKE '+1%' OR cleaned_phone LIKE '001%')
-            AND cleaned_phone NOT LIKE '%x%'
-        THEN regexp_replace(cleaned_phone, '^(?:\+1|001)', '')
-        
-        WHEN cleaned_phone LIKE '%x%'
-            AND cleaned_phone NOT LIKE '+%'
-            AND cleaned_phone NOT LIKE '001%'
-        THEN regexp_extract(cleaned_phone, '^(\d+?)x', 1)
-        
-        ELSE cleaned_phone
-    END AS extracted_phone,
-    cleaned_phone,
+    extracted_phone,
     extension
-    FROM phone_extract
+    FROM {{ ref('phone_detailing')}}
 ),
 
 staging_cleaned AS (
@@ -89,8 +48,8 @@ staging_cleaned AS (
 
         TRIM(REGEXP_REPLACE(sd.first_name, '[^\x20-\x7E]', '', 'g')) || ' ' || TRIM(REGEXP_REPLACE(sd.last_name, '[^\x20-\x7E]', '', 'g')) AS full_name, 
         CASE 
-            WHEN sd.email IS NULL OR TRIM(sd.email) = '' THEN NULL
-            WHEN LOWER(TRIM(REGEXP_REPLACE(sd.email, ' at ', '@', 'g'))) LIKE '%@%.%' THEN LOWER(TRIM(REGEXP_REPLACE(sd.email, ' at ', '@', 'g')))
+            WHEN sd.email IS NULL OR TRIM(email) = '' THEN NULL
+            WHEN LOWER(TRIM(REGEXP_REPLACE(sd.email, ' at ', '@', 'g'))) LIKE '%@%.%' THEN LOWER(TRIM(REGEXP_REPLACE(email, ' at ', '@', 'g')))
             WHEN LOWER(TRIM(REGEXP_REPLACE(sd.email, ' at ', '@', 'g'))) NOT LIKE '%@%.%' THEN NULL
             ELSE NULL
         END AS email,
@@ -123,7 +82,7 @@ staging_cleaned AS (
 
         CASE
             WHEN sd.zip_code::VARCHAR IN 
-            (SELECT sd.zip_code FROM {{ ref('us_zip_fips_county')}} ) THEN 0
+            (SELECT zip_code FROM {{ ref('us_zip_fips_county')}} ) THEN 0
             ELSE 1
         END AS invalid_zip_code_flag,
 
@@ -141,7 +100,7 @@ staging_cleaned AS (
 
         CASE 
             WHEN sd.address IS NULL THEN 0
-            WHEN sd.city IS NOT NULL AND address NOT LIKE '%' || sd.city || '%' THEN 1
+            WHEN sd.city IS NOT NULL AND sd.address NOT LIKE '%' || sd.city || '%' THEN 1
             ELSE 0
         END AS address_city_mismatch_flag,
 
@@ -153,7 +112,7 @@ staging_cleaned AS (
 
         CASE 
             WHEN sd.address IS NULL THEN 0
-            WHEN sd.zip_code IS NOT NULL AND sd.address NOT LIKE '%' || sd.zip_code || '%' THEN 1
+            WHEN sd.zip_code IS NOT NULL AND address NOT LIKE '%' || sd.zip_code || '%' THEN 1
             ELSE 0
         END AS address_zip_mismatch_flag,
 
@@ -232,8 +191,8 @@ staging_cleaned AS (
             ELSE 'Very Low Value'
         END AS ltv_tier,
 
-        CASE WHEN sd.email IS NULL OR TRIM(email) = '' THEN 1 ELSE 0 END AS missing_email_flag,
-        CASE WHEN sd.phone IS NULL OR TRIM(phone) = '' THEN 1 ELSE 0 END AS missing_phone_flag,
+        CASE WHEN sd.email IS NULL OR TRIM(sd.email) = '' THEN 1 ELSE 0 END AS missing_email_flag,
+        CASE WHEN sd.phone IS NULL OR TRIM(sd.phone) = '' THEN 1 ELSE 0 END AS missing_phone_flag,
 
         TRIM(REGEXP_REPLACE(sd.first_name, '[^\x20-\x7E]', '', 'g')) AS first_name_clean,
         TRIM(REGEXP_REPLACE(sd.last_name, '[^\x20-\x7E]', '', 'g')) AS last_name_clean,
@@ -252,12 +211,12 @@ staging_cleaned AS (
             COALESCE(sd.city, '') || '|' ||
             COALESCE(sd.state, '') || '|' ||
             COALESCE(sd.zip_code, '') || '|' ||
-            COALESCE(CAST(total_lifetime_value AS VARCHAR), '') 
+            COALESCE(CAST(sd.total_lifetime_value AS VARCHAR), '') 
         ) AS _row_hash,
 
         'raw_customers' AS _source_table
 
-    FROM source_data sd 
+    FROM source_data sd
     INNER JOIN phone_detailing pd 
     ON sd.customer_id = pd.customer_id
 )
