@@ -25,7 +25,7 @@ sales_with_dimension AS (
         CAST(REPLACE(CAST(txn.transaction_date AS VARCHAR), '-', '') AS INTEGER) AS date_key,
         
         COALESCE(cust.customer_key, {{ dbt_utils.generate_surrogate_key(["'-1'"]) }}) AS customer_key,
-        COALESCE(prod.product_key, {{ dbt_utils.generate_surrogate_key(["'-1'"]) }}) AS product_key,
+        COALESCE(prod.product_key, {{ dbt_utils.generate_surrogate_key(["'UNKNOWN'", "txn.product_id"]) }}) AS product_key,
         COALESCE(store.store_key, {{ dbt_utils.generate_surrogate_key(["'-1'"]) }}) AS store_key,
 
         txn.transaction_id,

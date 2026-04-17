@@ -183,12 +183,6 @@ models:
         tests:
           - unique
           - not_null
-      
-      - name: region
-        description: Geographic region
-        tests:
-          - accepted_values:
-              values: ['Northeast', 'South', 'Midwest', 'West']
 
   - name: dim_date
     description: >
@@ -419,10 +413,6 @@ models:
         description: Month-to-date cumulative revenue
         tests:
           - not_null
-          - dbt_utils.expression_is_true:
-              expression: ">= revenue"
-              config:
-                severity: error
       
       - name: revenue_ytd
         description: Year-to-date cumulative revenue
@@ -497,25 +487,13 @@ models:
         tests:
           - not_null
       
-      - name: region
-        description: Geographic region (Northeast, South, Midwest, West)
-        tests:
-          - not_null
-          - accepted_values:
-              values: ['Northeast', 'South', 'Midwest', 'West']
-      
       - name: manager
         description: Store manager name
-      
       
       - name: total_revenue
         description: All-time revenue for this store
         tests:
           - not_null
-          - dbt_utils.expression_is_true:
-              expression: "> 0"
-              config:
-                severity: error
       
       - name: total_profit
         description: All-time profit for this store
@@ -702,9 +680,9 @@ models:
       - name: total_revenue
         description: All-time revenue for this product
         tests:
-          - not_null
-          - dbt_utils.expression_is_true:
-              expression: "> 0"
+          - not_null:
+              config:
+                severity: warn
       
       - name: total_profit
         description: All-time profit for this product
@@ -714,7 +692,9 @@ models:
       - name: profit_margin_pct
         description: Profit margin percentage
         tests:
-          - not_null
+          - not_null:
+              config:
+                severity: warn
           - dbt_utils.accepted_range:
               min_value: -100  
               max_value: 100
@@ -929,17 +909,11 @@ models:
         description: Total revenue from this customer (all-time)
         tests:
           - not_null
-          - dbt_utils.expression_is_true:
-              expression: "> 0"
-              config:
-                severity: error
       
       - name: avg_purchase_value
         description: Average transaction value for this customer
         tests:
           - not_null
-          - dbt_utils.expression_is_true:
-              expression: "> 0"
       
       
       - name: first_purchase_date

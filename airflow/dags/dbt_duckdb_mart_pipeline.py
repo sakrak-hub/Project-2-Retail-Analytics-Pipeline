@@ -162,17 +162,6 @@ def log_schema_change(**context):
         conn.close()
 
 def check_gold_quality_gate(**context):
-    """
-    Quality gate that validates:
-    1. Dimension record counts
-    2. Fact table volume
-    3. Foreign key integrity (orphan records)
-    4. Data freshness
-    5. New mart views existence and quality
-    6. Mart views reconciliation
-    
-    NOTE: SCD2 checks removed - data is static (one row per entity)
-    """
     
     ti = context['ti']
     conn = duckdb.connect('/opt/airflow/dbt/warehouse.duckdb')
@@ -433,11 +422,6 @@ def check_gold_quality_gate(**context):
         conn.close()
 
 def generate_gold_metrics(**context):
-    """
-    Generate and log gold layer metrics to tracking table.
-    
-    NOTE: Simplified for static data - no SCD2 version tracking
-    """
     
     ti = context['ti']
     conn = duckdb.connect('/opt/airflow/dbt/warehouse.duckdb')
@@ -451,7 +435,7 @@ def generate_gold_metrics(**context):
                 run_date TIMESTAMP NOT NULL,
                 dag_run_id VARCHAR,
                 
-                -- Dimension metrics (static - no versions)
+                -- Dimension metrics
                 dim_customers_count INTEGER,
                 dim_products_count INTEGER,
                 dim_stores_count INTEGER,
@@ -649,9 +633,9 @@ def sync_bi_database(**context):
         tables = [
             'mart_db.dim_customers', 'mart_db.dim_products', 'mart_db.dim_stores', 'mart_db.dim_date',
             'mart_db.fact_sales',
-            'aggregated_db.daily_sales', 'aggregated_db.customer_segments', 
-            'aggregated_db.product_performance', 'aggregated_db.store_performance',
-            'aggregated_db.cohort_analysis', 'aggregated_db.executive_summary'
+            'aggregated_db.customer_metrics',
+            'aggregated_db.gold_metrics_log', 'aggregated_db.products_performance', 'aggregated_db.revenue_performance',
+            'aggregated_db.store_performance'
         ]
 
         for table in tables:
