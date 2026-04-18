@@ -503,7 +503,7 @@ def generate_gold_metrics(**context):
             SELECT COALESCE(MAX(metric_id), 0) + 1 
             FROM aggregated_db.gold_metrics_log
         """).fetchone()[0]
-        
+
         conn.execute("""
             INSERT INTO aggregated_db.gold_metrics_log 
             (metric_id, run_date, dag_run_id,
