@@ -2,10 +2,11 @@ import random
 from datetime import datetime, timedelta
 from typing import Dict, List
 from base_generator import BaseGenerator
+from variance_pool import VariancePool
 
 
 class TransactionGenerator(BaseGenerator):
-    """Generates daily transaction data with optional noise and duplicates."""
+
 
     def __init__(self, products: list, customers: list, stores: list,
                  target_monthly_transactions=120000, **kwargs):
@@ -15,42 +16,94 @@ class TransactionGenerator(BaseGenerator):
         self.stores = stores
         self.daily_transactions = target_monthly_transactions // 30
         self.duplicate_transactions = []
-
+        
+        # ← NEW: Create variance pool for realistic daily variance
+        seed = kwargs.get('seed', 42)
+        self.variance_pool = VariancePool(seed=seed)
+ 
     def generate_daily(self, date: datetime) -> List[Dict]:
-        """Generate transactions for a specific date with data quality issues."""
+        """Generate transactions for a specific date with realistic variance."""
         self.duplicate_transactions = []
         transactions = []
-
-        day_multipliers = {0: 1.2, 1: 1.0, 2: 1.0, 3: 1.1, 4: 1.3, 5: 1.5, 6: 1.2}
-        daily_volume = int(self.daily_transactions * day_multipliers[date.weekday()])
-
+ 
+        # BASE: Day-of-week pattern (weekends busier)
+        day_multipliers = {
+            0: 1.0,   # Monday
+            1: 0.95,  # Tuesday
+            2: 0.98,  # Wednesday
+            3: 1.05,  # Thursday
+            4: 1.25,  # Friday
+            5: 1.45,  # Saturday
+            6: 1.15,  # Sunday
+        }
+        base_multiplier = day_multipliers[date.weekday()]
+        
+        daily_variance = self.variance_pool.get_daily_multiplier(date)
+        
+        # ADD SEASONALITY: Monthly trends
+        month_multipliers = {
+            1: 0.85,   # January (post-holiday slowdown)
+            2: 0.90,   # February
+            3: 0.95,   # March
+            4: 1.00,   # April
+            5: 1.05,   # May
+            6: 1.10,   # June
+            7: 1.08,   # July
+            8: 1.03,   # August
+            9: 1.00,   # September
+            10: 1.10,  # October
+            11: 1.25,  # November (Black Friday)
+            12: 1.40,  # December (Holiday season)
+        }
+        seasonal_multiplier = month_multipliers[date.month]
+        
+        # ADD EVENTS: 10% chance of extra boost
+        event_multiplier = 1.0
+        if random.random() < 0.10:
+            event_multiplier = random.uniform(1.3, 1.5)
+        
+        # COMBINE ALL FACTORS
+        total_multiplier = (
+            base_multiplier * 
+            daily_variance *     
+            seasonal_multiplier * 
+            event_multiplier
+        )
+        
+        daily_volume = int(self.daily_transactions * total_multiplier)
+        
+        # Add some noise
+        noise = int(random.gauss(0, daily_volume * 0.1))
+        daily_volume = daily_volume + noise
+        daily_volume = max(100, daily_volume)
+ 
         for i in range(daily_volume):
             customer = random.choice(self.customers)
             store = random.choice(self.stores)
             transaction = self._generate_single_transaction(date, customer, store, i + 1)
             transactions.append(transaction)
-
+ 
         # Add duplicate transactions (15% duplicate rate)
         if self.add_noise:
             num_duplicates = int(len(transactions) * self.noise_config['duplicate_transactions'])
             for _ in range(num_duplicates):
                 original = random.choice(transactions)
                 duplicate = original.copy()
-
+ 
                 duplicate['transaction_id'] = f"DUP{duplicate['transaction_id']}"
-
+ 
                 if duplicate['datetime']:
                     original_dt = datetime.strptime(duplicate['datetime'], '%Y-%m-%d %H:%M:%S')
                     new_dt = original_dt + timedelta(minutes=random.randint(1, 30))
                     duplicate['datetime'] = new_dt.strftime('%Y-%m-%d %H:%M:%S')
                     duplicate['time'] = new_dt.strftime('%H:%M:%S')
-
+ 
                 if random.random() < 0.3:
                     duplicate['status'] = 'Failed'
-
+ 
                 transactions.append(duplicate)
                 self.duplicate_transactions.append((original['transaction_id'], duplicate['transaction_id']))
-
+ 
         return transactions
 
     def _generate_single_transaction(self, date: datetime, customer: Dict,
@@ -103,12 +156,18 @@ class TransactionGenerator(BaseGenerator):
             if self.add_noise and random.random() < self.noise_config['negative_quantities']:
                 quantity = random.randint(-5, -1)
 
+            # PRICE VARIANCE: Use NORMAL distribution (not uniform!)
             unit_price = product.get('price', 0)
             if isinstance(unit_price, str):
                 try:
                     unit_price = float(unit_price.replace('$', '').replace(',', ''))
                 except Exception:
                     unit_price = 0.00
+            
+            # Use gauss for price variance too
+            price_variance = random.gauss(1.0, 0.1)  # ±10% typically
+            price_variance = max(0.8, min(1.3, price_variance))  # Clamp extremes
+            unit_price = unit_price * price_variance
 
             discount = 0
             if random.random() < 0.15:
@@ -123,12 +182,14 @@ class TransactionGenerator(BaseGenerator):
                 'product_name': self._introduce_encoding_issues(product.get('product_name', 'Unknown')),
                 'category': product.get('category', 'Unknown'),
                 'quantity': quantity,
-                'unit_price': unit_price,
+                'unit_price': round(unit_price, 2),  # Save the varied price
                 'discount_percent': round(discount * 100, 2),
                 'line_total': round(line_total, 2),
             })
 
-        tax_rate = 0.08
+        # Tax variance using gauss
+        tax_rate = random.gauss(0.08, 0.01)  # Mean 8%, std 1%
+        tax_rate = max(0.06, min(0.10, tax_rate))  # 6-10% range
         tax_amount = subtotal * tax_rate
         total_amount = subtotal + tax_amount
 
@@ -171,6 +232,7 @@ class TransactionGenerator(BaseGenerator):
         return random.choice(codes)
 
     # ── Analytics helpers ─────────────────────────────────────────────────────
+    # These methods are called by data_generator.py - DO NOT REMOVE!
 
     def get_payment_breakdown(self, transactions: List[Dict]) -> Dict:
         """Return payment-method counts for a list of transactions."""
