@@ -18,6 +18,4 @@ retailitics_dbt/target/
 retailitics_dbt/logs/
 *.duckdb
 streaming/
-README.md
 tmp/
-streaming/
