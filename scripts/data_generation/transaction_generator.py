@@ -78,8 +78,11 @@ class TransactionGenerator(BaseGenerator):
         daily_volume = max(100, daily_volume)
  
         for i in range(daily_volume):
+            store_choice = len(self.stores)
+            while store_choice>(len(self.stores)-1):
+                store_choice = abs(int(random.gauss(len(self.stores)//2,len(self.stores)*daily_variance)))
             customer = random.choice(self.customers)
-            store = random.choice(self.stores)
+            store = self.stores[store_choice]
             transaction = self._generate_single_transaction(date, customer, store, i + 1)
             transactions.append(transaction)
  
