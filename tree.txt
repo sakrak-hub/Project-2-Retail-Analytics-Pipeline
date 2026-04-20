@@ -1,0 +1,56 @@
+.
+├── README.md
+├── airflow
+│   ├── Dockerfile
+│   ├── config
+│   ├── dags
+│   ├── docker-compose.yaml
+│   ├── logs
+│   ├── plugins
+│   └── requirements.txt
+├── docs
+├── env-retailitics
+│   ├── CACHEDIR.TAG
+│   ├── bin
+│   ├── etc
+│   ├── include
+│   ├── lib
+│   ├── lib64 -> lib
+│   ├── pyvenv.cfg
+│   └── share
+├── project-workflow.jpg
+├── retail_data
+├── retailitics_dbt
+│   ├── README.md
+│   ├── analyses
+│   ├── dbt_packages
+│   ├── dbt_project.yml
+│   ├── info
+│   ├── logs
+│   ├── macros
+│   ├── models
+│   ├── package-lock.yml
+│   ├── packages.yml
+│   ├── profiles.yml
+│   ├── requirements.txt
+│   ├── seeds
+│   ├── snapshots
+│   ├── target
+│   ├── tests
+│   ├── warehouse.duckdb
+│   └── warehouse_bi.duckdb
+├── scripts
+│   ├── __pycache__
+│   ├── data_generation
+│   └── streaming
+├── streaming
+│   ├── Dockerfile
+│   ├── docker-compose.yaml
+│   ├── kafka-broker-logs.txt
+│   └── kafka1
+├── terraform
+│   ├── bucket.tf
+│   └── provider.tf
+└── tree.txt
+
+32 directories, 22 files
