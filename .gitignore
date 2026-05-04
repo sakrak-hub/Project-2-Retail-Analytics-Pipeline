@@ -2,7 +2,6 @@ airflow/.env
 airflow/config/airflow.cfg
 airflow/logs/
 airflow/config/
-airflow/docker-compose.yaml
 airflow/Dockerfile
 env-retailitics/
 retail_data/
