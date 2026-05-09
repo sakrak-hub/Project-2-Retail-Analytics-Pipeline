@@ -1,4 +1,4 @@
-resource "aws_iam_role" "ec2_s3_role" {
+resource "aws_iam_role" "kafka_ec2_s3_role" {
   name = "retailitics-ec2-role"
 
   assume_role_policy = jsonencode({
@@ -11,9 +11,9 @@ resource "aws_iam_role" "ec2_s3_role" {
   })
 }
 
-resource "aws_iam_role_policy" "s3_read_write" {
+resource "aws_iam_role_policy" "kafka_s3_read_write" {
   name = "retailitics-s3-read-write"
-  role = aws_iam_role.ec2_s3_role.id
+  role = aws_iam_role.kafka_ec2_s3_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -31,7 +31,7 @@ resource "aws_iam_role_policy" "s3_read_write" {
         Sid    = "AllowRead"
         Effect = "Allow"
         Action = [
-          "s3:GetObject"   
+          "s3:GetObject"
         ]
         Resource = "arn:aws:s3:::my-retail-2026-analytics-5805/execute/*"
       },
@@ -39,15 +39,15 @@ resource "aws_iam_role_policy" "s3_read_write" {
         Sid    = "AllowWrite"
         Effect = "Allow"
         Action = [
-          "s3:PutObject"      
+          "s3:PutObject"
         ]
-        Resource = "arn:aws:s3:::my-retail-2026-analytics-5805/transactions/*"
+        Resource = "arn:aws:s3:::my-retail-2026-analytics-5805/retail_data/*"
       }
     ]
   })
 }
 
-resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "retailitics-ec2-profile"
-  role = aws_iam_role.ec2_s3_role.name
+resource "aws_iam_instance_profile" "kafka_ec2_profile" {
+  name = "retailitics-kafka-ec2-profile"
+  role = aws_iam_role.kafka_ec2_s3_role.name
 }

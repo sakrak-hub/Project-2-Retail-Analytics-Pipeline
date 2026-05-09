@@ -7,8 +7,8 @@ resource "aws_vpc" "retailitics-network" {
 resource "aws_subnet" "retailitics-network" {
   vpc_id                  = aws_vpc.retailitics-network.id
   cidr_block              = "10.0.1.0/24"
-  availability_zone       = "ap-southeast-2a"   
-  map_public_ip_on_launch = true                 
+  availability_zone       = "ap-southeast-2a"
+  map_public_ip_on_launch = true
 }
 
 resource "aws_internet_gateway" "retailitics-network" {
@@ -49,11 +49,8 @@ resource "aws_vpc_security_group_ingress_rule" "retailitics-network" {
 
 resource "aws_vpc_security_group_egress_rule" "retailitics-network" {
   security_group_id = aws_security_group.retailitics-network.id
-
   cidr_ipv4   = "0.0.0.0/0"
-  from_port   = 80
   ip_protocol = "-1"
-  to_port     = 80
 }
 
 resource "aws_vpc_security_group_ingress_rule" "kafka" {

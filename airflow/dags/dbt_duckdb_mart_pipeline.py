@@ -256,109 +256,6 @@ def check_gold_quality_gate(**context):
         if days_old > 7:
             logger.warning(f"Data may be stale: {days_old} days old")
         
-        logger.info("🔍 Validating mart views...")
-        
-        mart_counts = conn.execute("""
-            SELECT 
-                'revenue_performance' as mart_view,
-                COUNT(*) as row_count,
-                COUNT(*) FILTER (WHERE revenue IS NULL) as null_revenue_count,
-                COUNT(*) FILTER (WHERE transactions IS NULL) as null_transactions_count
-            FROM aggregated_db.revenue_performance
-            UNION ALL
-            SELECT 
-                'store_performance',
-                COUNT(*),
-                COUNT(*) FILTER (WHERE total_revenue IS NULL),
-                COUNT(*) FILTER (WHERE total_transactions IS NULL)
-            FROM aggregated_db.store_performance
-            UNION ALL
-            SELECT 
-                'products_performance',
-                COUNT(*),
-                COUNT(*) FILTER (WHERE total_revenue IS NULL),
-                COUNT(*) FILTER (WHERE revenue_rank IS NULL)
-            FROM aggregated_db.products_performance
-            UNION ALL
-            SELECT 
-                'customer_metrics',
-                COUNT(*),
-                COUNT(*) FILTER (WHERE lifetime_revenue IS NULL),
-                COUNT(*) FILTER (WHERE total_purchases IS NULL)
-            FROM aggregated_db.customer_metrics
-        """).fetchdf()
-        
-        logger.info(f"Mart view counts:\n{mart_counts}")
-        
-        for idx, row in mart_counts.iterrows():
-            mart_name = row['mart_view']
-            row_count = row['row_count']
-            null_count = row['null_revenue_count'] + row['null_transactions_count']
-            
-            if row_count == 0:
-                raise ValueError(f"Mart view {mart_name} is empty!")
-            
-            if null_count > 0:
-                logger.warning(f"Mart view {mart_name} has {null_count} null values in critical fields")
-        
-        revenue_performance_count = mart_counts[mart_counts['mart_view'] == 'revenue_performance']['row_count'].iloc[0]
-        store_performance_count = mart_counts[mart_counts['mart_view'] == 'store_performance']['row_count'].iloc[0]
-        products_performance_count = mart_counts[mart_counts['mart_view'] == 'products_performance']['row_count'].iloc[0]
-        customer_metrics_count = mart_counts[mart_counts['mart_view'] == 'customer_metrics']['row_count'].iloc[0]
-        
-        if revenue_performance_count < 30:
-            logger.warning(f"revenue_performance has only {revenue_performance_count} days (expected > 30)")
-
-        if abs(store_performance_count - stores_count) > 1:
-            logger.warning(f"store_performance count ({store_performance_count}) doesn't match dim_stores ({stores_count})")
-        
-        if abs(products_performance_count - products_count) > 10:
-            logger.warning(f"products_performance count ({products_performance_count}) doesn't match dim_products ({products_count})")
-        
-        if abs(customer_metrics_count - customers_count) > 10:
-            logger.warning(f"customer_metrics count ({customer_metrics_count}) doesn't match dim_customers ({customers_count})")
-        
-        ti.xcom_push(key='revenue_performance_count', value=int(revenue_performance_count))
-        ti.xcom_push(key='store_performance_count', value=int(store_performance_count))
-        ti.xcom_push(key='products_performance_count', value=int(products_performance_count))
-        ti.xcom_push(key='customer_metrics_count', value=int(customer_metrics_count))
-        
-        logger.info("🔍 Reconciling mart views with fact table...")
-        
-        reconciliation = conn.execute("""
-            SELECT 
-                -- Fact table totals
-                (SELECT SUM(line_total) FROM mart_db.fact_sales WHERE is_refund = FALSE) as fact_revenue,
-                (SELECT COUNT(DISTINCT transaction_id) FROM mart_db.fact_sales WHERE is_refund = FALSE) as fact_transactions,
-                
-                -- Mart totals
-                (SELECT SUM(revenue) FROM aggregated_db.revenue_performance) as revenue_mart_total,
-                (SELECT SUM(total_revenue) FROM aggregated_db.store_performance) as store_mart_total,
-                (SELECT SUM(total_revenue) FROM aggregated_db.products_performance) as product_mart_total,
-                (SELECT SUM(lifetime_revenue) FROM aggregated_db.customer_metrics) as customer_mart_total
-        """).fetchdf()
-        
-        logger.info(f"Reconciliation check:\n{reconciliation}")
-        
-        fact_revenue = reconciliation['fact_revenue'].iloc[0]
-        revenue_mart_total = reconciliation['revenue_mart_total'].iloc[0]
-        store_mart_total = reconciliation['store_mart_total'].iloc[0]
-        product_mart_total = reconciliation['product_mart_total'].iloc[0]
-        customer_mart_total = reconciliation['customer_mart_total'].iloc[0]
-        
-        revenue_tolerance = fact_revenue * 0.01
-        
-        if abs(revenue_mart_total - fact_revenue) > revenue_tolerance:
-            logger.warning(f"revenue_performance total ({revenue_mart_total:.2f}) doesn't match fact_sales ({fact_revenue:.2f})")
-        
-        if abs(store_mart_total - fact_revenue) > revenue_tolerance:
-            logger.warning(f"store_performance total ({store_mart_total:.2f}) doesn't match fact_sales ({fact_revenue:.2f})")
-        
-        if abs(product_mart_total - fact_revenue) > revenue_tolerance:
-            logger.warning(f"products_performance total ({product_mart_total:.2f}) doesn't match fact_sales ({fact_revenue:.2f})")
-        
-        if abs(customer_mart_total - fact_revenue) > revenue_tolerance:
-            logger.warning(f"customer_metrics total ({customer_mart_total:.2f}) doesn't match fact_sales ({fact_revenue:.2f})")
         
         quality_score = 100.0
         
@@ -369,13 +266,6 @@ def check_gold_quality_gate(**context):
         if orphan_stores > 100:
             quality_score -= 10
         if days_old > 7:
-            quality_score -= 5
-        
-        if revenue_performance_count < 30:
-            quality_score -= 5
-        if abs(revenue_mart_total - fact_revenue) > revenue_tolerance:
-            quality_score -= 5
-        if abs(store_mart_total - fact_revenue) > revenue_tolerance:
             quality_score -= 5
         
         ti.xcom_push(key='gold_quality_score', value=quality_score)
@@ -393,12 +283,6 @@ def check_gold_quality_gate(**context):
           • Sales:      {total_sales:,} records
           • Revenue:    ${total_revenue:,.2f}
           • Freshness:  {days_old} days old
-        
-        MART VIEWS:
-          • Revenue Performance:   {revenue_performance_count:,} days
-          • Store Performance:     {store_performance_count:,} stores
-          • Products Performance:  {products_performance_count:,} products
-          • Customer Metrics:      {customer_metrics_count:,} customers
         
         DATA QUALITY:
           • Orphan Records:   {orphan_customers + orphan_products + orphan_stores}
@@ -430,7 +314,7 @@ def generate_gold_metrics(**context):
         logger.info("📊 Generating gold layer metrics...")
         
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS aggregated_db.gold_metrics_log (
+            CREATE TABLE IF NOT EXISTS mart_db.gold_metrics_log (
                 metric_id INTEGER PRIMARY KEY,
                 run_date TIMESTAMP NOT NULL,
                 dag_run_id VARCHAR,
@@ -446,12 +330,6 @@ def generate_gold_metrics(**context):
                 total_revenue DECIMAL(18,2),
                 total_profit DECIMAL(18,2),
                 profit_margin_pct DECIMAL(5,2),
-                
-                -- Mart metrics (new)
-                revenue_performance_days INTEGER,
-                store_performance_stores INTEGER,
-                products_performance_products INTEGER,
-                customer_metrics_customers INTEGER,
                 
                 -- Data quality
                 quality_score DECIMAL(5,2),
@@ -481,14 +359,6 @@ def generate_gold_metrics(**context):
             WHERE is_refund = FALSE
         """).fetchone()
         
-        mart_metrics = conn.execute("""
-            SELECT 
-                (SELECT COUNT(*) FROM aggregated_db.revenue_performance) as revenue_days,
-                (SELECT COUNT(*) FROM aggregated_db.store_performance) as store_count,
-                (SELECT COUNT(*) FROM aggregated_db.products_performance) as product_count,
-                (SELECT COUNT(*) FROM aggregated_db.customer_metrics) as customer_count
-        """).fetchone()
-        
         orphan_metrics = conn.execute("""
             SELECT 
                 COUNT(*) FILTER (WHERE customer_key = MD5('-1')) as orphan_customers,
@@ -501,25 +371,23 @@ def generate_gold_metrics(**context):
 
         next_id = conn.execute("""
             SELECT COALESCE(MAX(metric_id), 0) + 1 
-            FROM aggregated_db.gold_metrics_log
+            FROM mart_db.gold_metrics_log
         """).fetchone()[0]
 
         conn.execute("""
-            INSERT INTO aggregated_db.gold_metrics_log 
+            INSERT INTO mart_db.gold_metrics_log 
             (metric_id, run_date, dag_run_id,
              dim_customers_count, dim_products_count, dim_stores_count, dim_date_count,
              total_sales_records, total_revenue, total_profit, profit_margin_pct,
-             revenue_performance_days, store_performance_stores, 
-             products_performance_products, customer_metrics_customers,
-             quality_score, orphan_customers, orphan_products, orphan_stores)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             quality_score, 
+             orphan_customers, orphan_products, orphan_stores)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [
             next_id,
             context['logical_date'],
             context['dag_run'].run_id,
             dim_metrics[0], dim_metrics[1], dim_metrics[2], dim_metrics[3],
             fact_metrics[0], fact_metrics[1], fact_metrics[2], fact_metrics[3],
-            mart_metrics[0], mart_metrics[1], mart_metrics[2], mart_metrics[3],
             quality_score,
             orphan_metrics[0], orphan_metrics[1], orphan_metrics[2]
         ])
@@ -541,12 +409,6 @@ def generate_gold_metrics(**context):
           - Profit:        ${fact_metrics[2]:,.2f}
           - Margin:        {fact_metrics[3]:.2f}%
         
-        Marts:
-          - Revenue Performance: {mart_metrics[0]:,} days
-          - Store Performance:   {mart_metrics[1]:,} stores
-          - Products Performance: {mart_metrics[2]:,} products
-          - Customer Metrics:    {mart_metrics[3]:,} customers
-        
         Quality:
           - Score:   {quality_score:.1f}/100
           - Orphans: {orphan_metrics[0] + orphan_metrics[1] + orphan_metrics[2]}
@@ -556,57 +418,6 @@ def generate_gold_metrics(**context):
     except Exception as e:
         logger.error(f"Failed to generate gold metrics: {e}")
         raise
-        
-    finally:
-        conn.close()
-
-def export_business_metrics(**context):
-    """
-    Export business metrics to CSV for external reporting.
-    
-    Uses revenue_performance mart (simplified approach - no fact table queries)
-    """
-    
-    conn = duckdb.connect('/opt/airflow/dbt/warehouse.duckdb')
-    
-    try:
-        logger.info("📤 Exporting business metrics...")
-        
-        daily_metrics = conn.execute("""
-            SELECT 
-                date,
-                year,
-                quarter,
-                month,
-                month_name,
-                day_name,
-                day_type,
-                revenue,
-                cost,
-                profit,
-                profit_margin_pct,
-                transactions,
-                customers as unique_customers,
-                units_sold,
-                avg_order_value,
-                revenue_7day_avg,
-                revenue_30day_avg,
-                revenue_mtd,
-                revenue_ytd
-            FROM aggregated_db.revenue_performance
-            WHERE is_last_30_days = TRUE
-            ORDER BY date DESC
-        """).fetchdf()
-        
-        daily_metrics.to_csv('/opt/airflow/master_data/daily_metrics.csv', index=False)
-        
-        logger.info(f"✅ Exported {len(daily_metrics)} days of metrics")
-        logger.info(f"   Revenue range: ${daily_metrics['revenue'].min():,.2f} - ${daily_metrics['revenue'].max():,.2f}")
-        logger.info(f"   Total revenue (30d): ${daily_metrics['revenue'].sum():,.2f}")
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to export business metrics: {e}")
-        raise ValueError(f"Error exporting metrics: {e}")
         
     finally:
         conn.close()
@@ -627,15 +438,11 @@ def sync_bi_database(**context):
         target_conn.execute(f"ATTACH '{SOURCE_DB}' AS source_db (READ_ONLY)")
         target_conn.execute("""
         CREATE SCHEMA IF NOT EXISTS mart_db;
-        CREATE SCHEMA IF NOT EXISTS aggregated_db;
         """)
         
         tables = [
             'mart_db.dim_customers', 'mart_db.dim_products', 'mart_db.dim_stores', 'mart_db.dim_date',
-            'mart_db.fact_sales',
-            'aggregated_db.customer_metrics',
-            'aggregated_db.gold_metrics_log', 'aggregated_db.products_performance', 'aggregated_db.revenue_performance',
-            'aggregated_db.store_performance'
+            'mart_db.fact_sales','mart_db.gold_metrics_log'
         ]
 
         for table in tables:
@@ -715,11 +522,6 @@ with DAG(
         python_callable=run_gold_with_schema_detection
     )
 
-    dbt_run_mart_views = BashOperator(
-    task_id='dbt_run_mart_views',
-    bash_command='cd /opt/airflow/dbt && dbt run --select models/mart/view --profiles-dir /opt/airflow/dbt'
-    )
-
     continue_pipeline = EmptyOperator(
         task_id='continue_pipeline'
     )
@@ -740,25 +542,14 @@ with DAG(
         trigger_rule='none_failed_min_one_success'
     )
 
-    dbt_test_mart_views = BashOperator(
-    task_id='dbt_test_mart_views',
-    bash_command='cd /opt/airflow/dbt && dbt test --select models/mart/view --profiles-dir /opt/airflow/dbt'
-    )
-
     gold_quality_gate = PythonOperator(
         task_id='gold_quality_gate',
         python_callable=check_gold_quality_gate
     )
 
-    generate_metrics = PythonOperator(
+    generate_gold_metrics = PythonOperator(
         task_id='generate_gold_metrics',
         python_callable=generate_gold_metrics
-    )
-
-    export_metrics = PythonOperator(
-        task_id='export_business_metrics',
-        python_callable=export_business_metrics,
-        trigger_rule='all_done' 
     )
 
     generate_docs = BashOperator(
@@ -790,10 +581,10 @@ with DAG(
 
     continue_pipeline >> dbt_test_gold
 
-    dbt_test_gold >> dbt_run_mart_views >> dbt_test_mart_views >> gold_quality_gate
+    dbt_test_gold >> gold_quality_gate
 
-    gold_quality_gate >> generate_metrics
+    gold_quality_gate >> generate_gold_metrics
 
-    generate_metrics >> [export_metrics, generate_docs] >> create_sync_bi_data >> update_motherduck_db
+    generate_gold_metrics >> generate_docs >> create_sync_bi_data >> update_motherduck_db
 
     update_motherduck_db >> gold_layer_complete
