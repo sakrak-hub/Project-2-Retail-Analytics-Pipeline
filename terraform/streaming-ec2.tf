@@ -29,6 +29,6 @@ resource "aws_key_pair" "generated_key" {
 
 resource "local_sensitive_file" "private_key" {
   content         = tls_private_key.kafka_stream_key.private_key_pem
-  filename        = "/home/sakra_k/.ssh/my-terraform-key.pem"
+  filename        = ".ssh/my-terraform-key.pem"
   file_permission = "0400"
 }
