@@ -18,4 +18,4 @@ retailitics_dbt/logs/
 streaming/
 tmp/
 terraform/*/*.pem
-terraform/.ssh
+terraform/.ssh/
