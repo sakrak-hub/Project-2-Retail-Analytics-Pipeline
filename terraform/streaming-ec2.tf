@@ -32,15 +32,3 @@ resource "local_sensitive_file" "private_key" {
   filename        = ".ssh/my-terraform-key.pem"
   file_permission = "0400"
 }
-
-resource "aws_eip" "kafka-ecs-host" {
-  domain = "vpc"
-  tags = {
-    Name = "Kafka-Streaming"
-  }
-}
-
-resource "aws_eip_association" "kafka-ecs-host" {
-  instance_id   = aws_instance.streaming-ec2.id
-  allocation_id = aws_eip.kafka-ecs-host.id
-}
