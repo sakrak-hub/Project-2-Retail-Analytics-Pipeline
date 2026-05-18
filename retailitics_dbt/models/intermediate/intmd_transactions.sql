@@ -7,9 +7,15 @@
     )
 }}
 
+{%- set target_relation = load_relation(this) -%}
+
 WITH max_loaded AS (
-    SELECT COALESCE(MAX(intermediate_processed_at), '2026-01-01'::TIMESTAMP) AS max_load
-        FROM {{ this }} 
+    SELECT 
+    COALESCE(
+        {% if target_relation is not none %}
+            (SELECT MAX(transaction_date) FROM {{ this }}),
+        {% endif %}
+        '2026-01-01') AS max_load
 ),
 
 staging_source AS (
