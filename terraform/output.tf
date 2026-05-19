@@ -7,3 +7,8 @@ output "kafka_instance" {
   description = "The ID of the EC2 instance"
   value       = aws_instance.streaming-ec2.id
 }
+
+output "local_ip"{
+  description = "IP of local system"
+  value = data.http.my_ip.response_body
+}
