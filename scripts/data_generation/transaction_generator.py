@@ -227,6 +227,7 @@ class TransactionGenerator(BaseGenerator):
             'promotion_code': self._generate_promotion_code() if random.random() < 0.1 else None,
             'refund_reason': refund_reason,
             'status': status,
+            'data_created/modified': datetime.now()
         }
 
     def _generate_promotion_code(self) -> str:

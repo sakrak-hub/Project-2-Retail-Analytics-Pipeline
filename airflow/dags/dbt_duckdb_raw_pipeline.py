@@ -8,8 +8,22 @@ from datetime import datetime, timedelta
 import logging
 import duckdb
 import subprocess
+import boto3
 
 logger = logging.getLogger(__name__)
+
+def copy_streaming_file(ds, **kwargs):
+
+    date_today = datetime.now().date()
+
+    s3 = boto3.client('s3')
+
+    copy_source = {
+        'Bucket': 'my-retail-2026-analytics-5805',
+        'Key': 'retail_data/streaming/transactions_stream.parquet'
+    }
+
+    s3.copy(copy_source, 'my-retail-2026-analytics-5805', f'retail_data/transactions/transactions_{date_today}.parquet')
 
 def dag_failure_callback(context):
 
@@ -258,6 +272,11 @@ with DAG(
         task_id='raw_layer_start',
         bash_command='cd /opt/airflow/dbt && dbt run --select models/metadata --profiles-dir /opt/airflow/dbt'
         )
+    
+    copy_streaming_file = PythonOperator(
+        task_id='copy_streaming_file',
+        python_callable=copy_streaming_file
+    )
 
     dbt_seed = BashOperator(
         task_id='dbt_seed',
@@ -342,10 +361,10 @@ with DAG(
         trigger_rule='none_failed_min_one_success'
     )
 
-    start >> raw_layer_start
+    start >> raw_layer_start >> copy_streaming_file
 
-    raw_layer_start >> dbt_seed >> dbt_run_raw >> dbt_test_raw_sources
-
+    copy_streaming_file >> dbt_seed >> dbt_run_raw >> dbt_test_raw_sources
+    
     dbt_test_raw_sources >> staging_layer_start
 
     staging_layer_start >> dbt_run_staging_with_detection 

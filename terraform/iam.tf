@@ -23,8 +23,7 @@ resource "aws_iam_role_policy" "kafka_s3_read_write" {
         Effect = "Allow"
         Action = [
           "s3:ListBucket",
-          "s3:GetBucketLocation",
-          "s3:ListBucketVersions" 
+          "s3:GetBucketLocation"
         ]
         Resource = "arn:aws:s3:::my-retail-2026-analytics-5805"
       },
@@ -32,8 +31,7 @@ resource "aws_iam_role_policy" "kafka_s3_read_write" {
         Sid    = "AllowRead"
         Effect = "Allow"
         Action = [
-          "s3:GetObject",
-          "s3:GetObjectVersion"
+          "s3:GetObject"
         ]
         Resource = "arn:aws:s3:::my-retail-2026-analytics-5805/execute/*"
       },
@@ -41,8 +39,7 @@ resource "aws_iam_role_policy" "kafka_s3_read_write" {
         Sid    = "AllowReadParquet"
         Effect = "Allow"
         Action = [
-          "s3:GetObject",
-          "s3:GetObjectVersion"
+          "s3:GetObject"
         ]
         Resource = "arn:aws:s3:::my-retail-2026-analytics-5805/retail_data/*.parquet"
       },
@@ -52,10 +49,9 @@ resource "aws_iam_role_policy" "kafka_s3_read_write" {
         Action = [
           "s3:PutObject",
           "s3:GetObject",
-          "s3:GetObjectVersion",
           "s3:DeleteObject" 
         ]
-        Resource = "arn:aws:s3:::my-retail-2026-analytics-5805/retail_data/transactions/*"
+        Resource = "arn:aws:s3:::my-retail-2026-analytics-5805/retail_data/streaming/*"
       }
     ]
   })
