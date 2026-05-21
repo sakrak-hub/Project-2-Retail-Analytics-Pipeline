@@ -15,7 +15,6 @@ retailitics_dbt/*.duckdb
 retailitics_dbt/target/
 retailitics_dbt/logs/
 *.duckdb
-streaming/
 tmp/
 terraform/*/*.pem
 terraform/.ssh/
