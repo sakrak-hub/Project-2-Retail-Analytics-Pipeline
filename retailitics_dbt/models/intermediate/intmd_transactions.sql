@@ -7,15 +7,13 @@
     )
 }}
 
-{%- set target_relation = load_relation(this) -%}
-
 WITH max_loaded AS (
     SELECT 
     COALESCE(
-        {% if target_relation is not none %}
-            (SELECT MAX(transaction_date) FROM {{ this }}),
+        {% if is_incremental() %}
+            (SELECT MAX(intermediate_processed_at) FROM {{ this }}),
         {% endif %}
-        '2026-01-01') AS max_load
+        '2026-01-01 00:00:00') AS max_load
 ),
 
 staging_source AS (
@@ -23,7 +21,7 @@ staging_source AS (
     FROM {{ ref('stg_transactions') }}
     
     {% if is_incremental() %}
-    WHERE raw_loaded_at > (
+    WHERE (raw_loaded_at::TIMESTAMP WITH TIME ZONE) > (
         SELECT max_load
         FROM max_loaded
     )
@@ -60,7 +58,7 @@ intermediate_final AS (
         {{ dbt_utils.generate_surrogate_key([
             'transaction_id_clean', 
             'product_id', 
-            'staging_processed_at'
+            'raw_loaded_at'
         ]) }} AS line_item_key,
         
         transaction_id_clean AS transaction_id,

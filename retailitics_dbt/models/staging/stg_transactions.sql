@@ -7,24 +7,22 @@
     )
 }}
 
-WITH source_data AS (
+WITH max_staging AS (
+    SELECT 
+    COALESCE(
+        {% if is_incremental() %}
+            (SELECT MAX(staging_processed_at) FROM {{ this }}),
+        {% endif %}
+        '2026-01-01 00:00:00') AS max_load
+),
+
+source_data AS (
     SELECT * FROM {{ ref('raw_transactions') }}
     
     {% if is_incremental() %}
-
-    WHERE NOT EXISTS (
-        SELECT 1 
-        FROM {{ this }} existing
-        WHERE existing.transaction_id_clean = REGEXP_REPLACE({{ ref('raw_transactions') }}.transaction_id, 'DUP', '', 'g')
-          AND existing.product_id = {{ ref('raw_transactions') }}.product_id
-          AND existing._row_hash = MD5(
-              COALESCE({{ ref('raw_transactions') }}.transaction_id, '') || '|' ||
-              COALESCE({{ ref('raw_transactions') }}.product_id, '') || '|' ||
-              COALESCE(CAST({{ ref('raw_transactions') }}.quantity AS VARCHAR), '') || '|' ||
-              COALESCE(CAST({{ ref('raw_transactions') }}.unit_price AS VARCHAR), '') || '|' ||
-              COALESCE(CAST({{ ref('raw_transactions') }}.line_total AS VARCHAR), '') || '|' ||
-              COALESCE({{ ref('raw_transactions') }}.status, '')
-          )
+    WHERE (data_created_modified::TIMESTAMP WITH TIME ZONE)>(
+        SELECT max_load
+        FROM max_staging
     )
     {% endif %}
 ),
@@ -151,7 +149,7 @@ staging_cleaned AS (
         CASE WHEN sd.unit_price > 10000 THEN 1 ELSE 0 END AS high_unit_price_flag,
         CASE WHEN sd.total_amount > 100000 THEN 1 ELSE 0 END AS high_total_amount_flag,
 
-        sd._loaded_at_date AS raw_loaded_at,
+        sd.data_created_modified AS raw_loaded_at,
         CURRENT_TIMESTAMP AS staging_processed_at, 
         '{{ run_started_at }}' AS staging_batch_id,
         '{{ var("source_system", "RETAIL_S3") }}' AS _source_system,

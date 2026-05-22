@@ -29,7 +29,8 @@ r.category,
 r.quantity,              
 r.unit_price,            
 r.discount_percent,      
-r.line_total
+r.line_total,
+r."data_created/modified" as data_created_modified
 from
 read_parquet('s3://my-retail-2026-analytics-5805/retail_data/transactions/*.parquet') r
 INNER JOIN {{ ref('s3_transactions_metadata') }} m
