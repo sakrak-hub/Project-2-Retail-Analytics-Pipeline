@@ -36,10 +36,11 @@ resource "aws_iam_role_policy" "kafka_s3_read_write" {
         Resource = "arn:aws:s3:::my-retail-2026-analytics-5805/execute/*"
       },
       {
-        Sid    = "AllowReadParquet"
+        Sid    = "AllowReadCopyParquet"
         Effect = "Allow"
         Action = [
-          "s3:GetObject"
+          "s3:GetObject",
+          "s3:PutObject"
         ]
         Resource = "arn:aws:s3:::my-retail-2026-analytics-5805/retail_data/*.parquet"
       },
