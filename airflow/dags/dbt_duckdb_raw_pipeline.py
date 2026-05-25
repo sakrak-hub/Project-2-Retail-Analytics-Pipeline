@@ -23,7 +23,7 @@ def copy_streaming_file():
     date_today = datetime.now().date()
     try:
         df = pd.read_parquet(f"s3://my-retail-2026-analytics-5805/retail_data/streaming/transactions_stream.parquet")
-        if (((df["date"][0]).to_pydatetime()).date())==date_today:
+        if (((df["date"][(len(df)-1)]).to_pydatetime()).date())==date_today:
             s3.copy(file_source, 'my-retail-2026-analytics-5805', f'retail_data/transactions/transactions_{date_today}.parquet')
             logger.info("File copy successful!")
         else:
