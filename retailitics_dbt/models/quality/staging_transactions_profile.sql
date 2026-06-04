@@ -147,7 +147,7 @@ profile_enriched AS (
             WHEN total_line_items = 0 THEN NULL
             WHEN unique_transactions = 0 THEN NULL
             ELSE ROUND(total_line_items * 1.0 / unique_transactions, 2)
-        END AS actual_line_items_per_txn_ratio,
+        END AS actual_line_items_per_txn_ratio, 
 
         CASE 
             WHEN total_line_items = 0 THEN NULL

@@ -135,7 +135,7 @@ def check_staging_quality_gate(**context):
                 logger.error(f"   Unusual grain: {avg_items} items/txn")
             logger.info("="*60)
             
-            return 'skip_staging'
+            return 'skip_intermediate'
     
     finally:
         conn.close()
