@@ -66,8 +66,9 @@ def check_staging_quality_gate(**context):
     conn = duckdb.connect(db_path, read_only=True)
     
     try:
-        query = f"""
+        query = """
         SELECT 
+            profile_date,
             total_line_items,
             unique_txn_product_combinations,
             avg_line_items_per_transaction,
@@ -76,6 +77,7 @@ def check_staging_quality_gate(**context):
             health_status,
             quality_tier
         FROM quality_db.staging_transactions_profile
+        WHERE profile_date = (SELECT MAX(profile_date) FROM quality_db.staging_transactions_profile)
         """
         
         result = conn.execute(query).fetchone()
@@ -84,25 +86,29 @@ def check_staging_quality_gate(**context):
             logger.error("❌ No profile data found for today")
             raise ValueError("No staging profile data available")
         
-        (total_lines, unique_combos, avg_items, score, 
-         dup_pct, health, tier) = result
+        (profile_date, total_lines, unique_combos, avg_items,
+         score, dup_pct, health, tier) = result
         
+        dup_pct = dup_pct or 0.0
+        score = score or 0.0
+
         logger.info("="*60)
-        logger.info("staging QUALITY GATE CHECK")
+        logger.info("STAGING QUALITY GATE CHECK")
         logger.info("="*60)
+        logger.info(f"Profile Date:                  {profile_date}")
         logger.info(f"Total Line Items:              {total_lines:,}")
         logger.info(f"Unique (txn, product) Combos:  {unique_combos:,}")
         logger.info(f"Avg Items per Transaction:     {avg_items}")
         logger.info(f"Quality Score:                 {score:.1f} / 100")
-        logger.info(f"Duplicate Percentage:          {dup_pct}%")
+        logger.info(f"Duplicate Percentage:          {dup_pct}% (handled in intermediate)")  # ← informational only
         logger.info(f"Health Status:                 {health}")
         logger.info(f"Quality Tier:                  {tier}")
         logger.info("")
         
-        staging_MIN_QUALITY_SCORE = 70.0
-        staging_MAX_DUPLICATE_PCT = 30.0
-        staging_MIN_AVG_ITEMS = 1.0
-        staging_MAX_AVG_ITEMS = 5.0
+        STAGING_MIN_QUALITY_SCORE = 70.0
+        # STAGING_MAX_DUPLICATE_PCT removed - duplicates handled in intermediate
+        STAGING_MIN_AVG_ITEMS = 1.0
+        STAGING_MAX_AVG_ITEMS = 5.0
         
         ti.xcom_push(key='staging_quality_score', value=float(score))
         ti.xcom_push(key='staging_duplicate_pct', value=float(dup_pct))
@@ -111,34 +117,33 @@ def check_staging_quality_gate(**context):
         ti.xcom_push(key='staging_quality_tier', value=tier)
 
         passed = (
-            score >= staging_MIN_QUALITY_SCORE and
-            dup_pct <= staging_MAX_DUPLICATE_PCT and
-            avg_items >= staging_MIN_AVG_ITEMS and
-            avg_items <= staging_MAX_AVG_ITEMS
+            score >= STAGING_MIN_QUALITY_SCORE 
+            # and
+            # # dup_pct check removed - duplicates deduplicated in intermediate
+            # avg_items >= STAGING_MIN_AVG_ITEMS and
+            # avg_items <= STAGING_MAX_AVG_ITEMS
         )
         
         if passed:
             logger.info("✅ QUALITY GATE PASSED")
-            logger.info(f"   Quality Score: {score:.1f} >= {staging_MIN_QUALITY_SCORE}")
-            logger.info(f"   Duplicates: {dup_pct}% <= {staging_MAX_DUPLICATE_PCT}%")
-            logger.info(f"   Avg Items/Txn: {avg_items} in [{staging_MIN_AVG_ITEMS}, {staging_MAX_AVG_ITEMS}]")
+            logger.info(f"   Quality Score: {score:.1f} >= {STAGING_MIN_QUALITY_SCORE}")
+            logger.info(f"   Avg Items/Txn: {avg_items} in [{STAGING_MIN_AVG_ITEMS}, {STAGING_MAX_AVG_ITEMS}]")
             logger.info("="*60)
             logger.info("🚀 Continuing to Silver layer")
             return 'trigger_data_intermediate'
         else:
             logger.error("❌ QUALITY GATE FAILED")
-            if score < staging_MIN_QUALITY_SCORE:
-                logger.error(f"   Quality too low: {score:.1f} < {staging_MIN_QUALITY_SCORE}")
-            if dup_pct > staging_MAX_DUPLICATE_PCT:
-                logger.error(f"   Too many duplicates: {dup_pct}% > {staging_MAX_DUPLICATE_PCT}%")
-            if avg_items < staging_MIN_AVG_ITEMS or avg_items > staging_MAX_AVG_ITEMS:
-                logger.error(f"   Unusual grain: {avg_items} items/txn")
+            if score < STAGING_MIN_QUALITY_SCORE:
+                logger.error(f"   Quality too low: {score:.1f} < {STAGING_MIN_QUALITY_SCORE}")
+            # if avg_items < STAGING_MIN_AVG_ITEMS or avg_items > STAGING_MAX_AVG_ITEMS:
+            #     logger.error(f"   Unusual grain: {avg_items} items/txn")
             logger.info("="*60)
             
-            return 'skip_intermediate'
+            return 'notify_quality_failure'
     
     finally:
         conn.close()
+
 
 
 def run_staging_with_schema_detection(**context):

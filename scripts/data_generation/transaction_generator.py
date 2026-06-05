@@ -159,7 +159,6 @@ class TransactionGenerator(BaseGenerator):
             if self.add_noise and random.random() < self.noise_config['negative_quantities']:
                 quantity = random.randint(-5, -1)
 
-            # PRICE VARIANCE: Use NORMAL distribution (not uniform!)
             unit_price = product.get('price', 0)
             if isinstance(unit_price, str):
                 try:
@@ -167,9 +166,8 @@ class TransactionGenerator(BaseGenerator):
                 except Exception:
                     unit_price = 0.00
             
-            # Use gauss for price variance too
-            price_variance = random.gauss(1.0, 0.1)  # ±10% typically
-            price_variance = max(0.8, min(1.3, price_variance))  # Clamp extremes
+            price_variance = random.gauss(1.0, 0.1) 
+            price_variance = max(0.8, min(1.3, price_variance)) 
             unit_price = unit_price * price_variance
 
             discount = 0
@@ -185,14 +183,13 @@ class TransactionGenerator(BaseGenerator):
                 'product_name': self._introduce_encoding_issues(product.get('product_name', 'Unknown')),
                 'category': product.get('category', 'Unknown'),
                 'quantity': quantity,
-                'unit_price': round(unit_price, 2),  # Save the varied price
+                'unit_price': round(unit_price, 2), 
                 'discount_percent': round(discount * 100, 2),
                 'line_total': round(line_total, 2),
             })
 
-        # Tax variance using gauss
-        tax_rate = random.gauss(0.08, 0.01)  # Mean 8%, std 1%
-        tax_rate = max(0.06, min(0.10, tax_rate))  # 6-10% range
+        tax_rate = random.gauss(0.08, 0.01)
+        tax_rate = max(0.06, min(0.10, tax_rate)) 
         tax_amount = subtotal * tax_rate
         total_amount = subtotal + tax_amount
 

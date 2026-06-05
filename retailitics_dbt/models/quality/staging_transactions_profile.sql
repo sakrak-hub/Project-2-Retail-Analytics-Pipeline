@@ -28,7 +28,11 @@ WITH line_items_with_duplicate_flag AS (
 transactions_daily AS (
     SELECT 
         DATE_TRUNC('day', staging_processed_at) AS profile_date,
-        MAX(transaction_date) AS date_to_process,
+
+        -- ✅ FIX: Summarize transaction date range instead of grouping by it
+        MIN(transaction_date) AS min_transaction_date,
+        MAX(transaction_date) AS max_transaction_date,
+
         COUNT(*) AS total_line_items,
         COUNT(DISTINCT CONCAT(transaction_id_clean, '|', product_id)) AS unique_txn_product_combinations,
         COUNT(DISTINCT transaction_id_clean) AS unique_transactions,
@@ -36,7 +40,7 @@ transactions_daily AS (
         COUNT(DISTINCT product_id) AS unique_products_sold,
         COUNT(DISTINCT store_id) AS unique_stores,
 
-        ROUND(COUNT(*) * 1.0 / COUNT(DISTINCT transaction_id_clean), 2) AS avg_line_items_per_transaction,
+        ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT transaction_id_clean), 0), 2) AS avg_line_items_per_transaction,
 
         SUM(
             CASE 
@@ -50,10 +54,10 @@ transactions_daily AS (
         SUM(missing_customer_id_flag) AS missing_customer_id_count,
         SUM(missing_product_id_flag) AS missing_product_id_count,
 
-        ROUND(SUM(missing_transaction_id_flag) * 100.0 / COUNT(*), 2) AS missing_txn_id_pct,
-        ROUND(SUM(missing_date_flag) * 100.0 / COUNT(*), 2) AS missing_date_pct,
-        ROUND(SUM(missing_customer_id_flag) * 100.0 / COUNT(*), 2) AS missing_customer_pct,
-        ROUND(SUM(missing_product_id_flag) * 100.0 / COUNT(*), 2) AS missing_product_pct,
+        ROUND(SUM(missing_transaction_id_flag) * 100.0 / NULLIF(COUNT(*), 0), 2) AS missing_txn_id_pct,
+        ROUND(SUM(missing_date_flag) * 100.0 / NULLIF(COUNT(*), 0), 2) AS missing_date_pct,
+        ROUND(SUM(missing_customer_id_flag) * 100.0 / NULLIF(COUNT(*), 0), 2) AS missing_customer_pct,
+        ROUND(SUM(missing_product_id_flag) * 100.0 / NULLIF(COUNT(*), 0), 2) AS missing_product_pct,
 
         SUM(negative_quantity_flag) AS negative_quantity_count,
         SUM(negative_amount_flag) AS negative_amount_count,
@@ -61,8 +65,8 @@ transactions_daily AS (
         SUM(zero_quantity_flag) AS zero_quantity_count,
         SUM(high_unit_price_flag) AS high_unit_price_count,
 
-        ROUND(SUM(negative_quantity_flag) * 100.0 / COUNT(*), 2) AS negative_quantity_pct,
-        ROUND(SUM(zero_total_amount_flag) * 100.0 / COUNT(*), 2) AS zero_total_pct,
+        ROUND(SUM(negative_quantity_flag) * 100.0 / NULLIF(COUNT(*), 0), 2) AS negative_quantity_pct,
+        ROUND(SUM(zero_total_amount_flag) * 100.0 / NULLIF(COUNT(*), 0), 2) AS zero_total_pct,
 
         SUM(line_total) AS total_line_item_revenue,
         AVG(line_total) AS avg_line_item_value,
@@ -83,16 +87,17 @@ transactions_daily AS (
 
         GREATEST(0, 
             100 
-            - (SUM(missing_transaction_id_flag) * 100.0 / COUNT(*))  
-            - (SUM(missing_date_flag) * 100.0 / COUNT(*))            
-            - (SUM(missing_product_id_flag) * 100.0 / COUNT(*))      
-            - (SUM(negative_quantity_flag) * 100.0 / COUNT(*) * 0.5) 
-            - (SUM(zero_total_amount_flag) * 100.0 / COUNT(*) * 0.5)
+            - (SUM(missing_transaction_id_flag) * 100.0 / NULLIF(COUNT(*), 0))  
+            - (SUM(missing_date_flag) * 100.0 / NULLIF(COUNT(*), 0))            
+            - (SUM(missing_product_id_flag) * 100.0 / NULLIF(COUNT(*), 0))      
+            - (SUM(negative_quantity_flag) * 100.0 / NULLIF(COUNT(*), 0) * 0.5) 
+            - (SUM(zero_total_amount_flag) * 100.0 / NULLIF(COUNT(*), 0) * 0.5)
         ) AS line_item_quality_score
     
     FROM line_items_with_duplicate_flag
     
-    GROUP BY DATE_TRUNC('day',staging_processed_at), transaction_date
+    -- ✅ FIX: Group by staging day ONLY - one row per dbt run
+    GROUP BY DATE_TRUNC('day', staging_processed_at)
 ),
 
 profile_enriched AS (
