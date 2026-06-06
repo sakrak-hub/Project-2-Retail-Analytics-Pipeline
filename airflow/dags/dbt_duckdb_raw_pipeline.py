@@ -106,7 +106,6 @@ def check_staging_quality_gate(**context):
         logger.info("")
         
         STAGING_MIN_QUALITY_SCORE = 70.0
-        # STAGING_MAX_DUPLICATE_PCT removed - duplicates handled in intermediate
         STAGING_MIN_AVG_ITEMS = 1.0
         STAGING_MAX_AVG_ITEMS = 5.0
         
